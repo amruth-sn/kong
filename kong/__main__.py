@@ -11,6 +11,8 @@ from rich.markup import escape
 from kong import __version__
 from kong.config import GhidraConfig, KongConfig, OutputConfig
 
+from kong.ghidra.client import GhidraClient, GhidraClientError
+from collections import Counter
 console = Console()
 
 
@@ -79,8 +81,6 @@ def analyze(
         )
         raise SystemExit(1)
 
-    from kong.ghidra.client import GhidraClient, GhidraClientError
-
     try:
         with console.status(
             "[bold green]Opening binary in Ghidra (this may take 30-60s on first run) ...",
@@ -106,9 +106,8 @@ def analyze(
         f"{len(functions) - thunks} to analyze"
     )
 
-    # TODO: Phase 2-4 — Agent loop (Session 2+)
-    console.print("\n[yellow]Agent loop not yet implemented.[/yellow]")
-    console.print("[dim]Session 1 complete — Ghidra integration verified.[/dim]")
+    # TODO: agent loop
+    console.print("\n[yellow]done")
 
     client.close()
 
@@ -118,8 +117,7 @@ def analyze(
 @click.option("--ghidra-dir", default=None, help="Ghidra installation directory.")
 def info(binary: str, ghidra_dir: str | None) -> None:
     """Show info about a binary."""
-    from kong.ghidra.client import GhidraClient, GhidraClientError
-
+    
     ghidra_config = GhidraConfig(install_dir=ghidra_dir)
     if not ghidra_config.install_dir:
         console.print("[red]Ghidra is not installed or not found.[/red]")
@@ -148,7 +146,6 @@ def info(binary: str, ghidra_dir: str | None) -> None:
     console.print(f"[bold]Functions:[/bold] {len(functions)}")
 
     # Classification breakdown
-    from collections import Counter
     counts = Counter(f.classification.value for f in functions if f.classification)
     for cls, count in sorted(counts.items()):
         console.print(f"  {cls}: {count}")

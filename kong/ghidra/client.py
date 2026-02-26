@@ -21,6 +21,8 @@ from kong.ghidra.types import (
     VariableInfo,
     XRef,
 )
+from kong.ghidra.environment import find_ghidra_install
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +56,6 @@ class GhidraClient:
     def __init__(self, binary_path: str, install_dir: str | None = None) -> None:
         self.binary_path = str(Path(binary_path).resolve())
         if install_dir is None:
-            from kong.ghidra.environment import find_ghidra_install
             install_dir = find_ghidra_install()
         self.install_dir = install_dir
         self._program: Any = None

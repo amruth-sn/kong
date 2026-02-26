@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from kong.ghidra.environment import find_ghidra_install
 
 
 @dataclass
@@ -14,8 +15,6 @@ class GhidraConfig:
 
     def __post_init__(self) -> None:
         if self.install_dir is None:
-            from kong.ghidra.environment import find_ghidra_install
-
             self.install_dir = find_ghidra_install()
 
 
