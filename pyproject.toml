@@ -1,0 +1,33 @@
+[project]
+name = "kong"
+version = "0.1.0"
+description = "Autonomous binary analysis engine powered by Ghidra + LLM orchestration"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "anthropic>=0.40",
+    "textual>=1.0",
+    "lief>=0.15",
+    "z3-solver>=4.12",
+    "pyghidra>=2.2.1",
+    "jpype1>=1.6.0",
+]
+
+[project.scripts]
+kong = "kong.__main__:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
