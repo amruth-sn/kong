@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 
 from kong.agent.events import Event, EventCallback, EventType, Phase
+from kong.agent.queue import WorkQueue
 from kong.config import KongConfig
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo
@@ -92,6 +93,7 @@ class Supervisor:
     ) -> None:
         self.client = client
         self.config = config
+        self.queue = WorkQueue()
         self.stats = AnalysisStats()
         self.results: dict[int, FunctionResult] = {}  # Mapping of address to FunctionResult
         self.binary_info: BinaryInfo | None = None # initially None until set in _run_triage    
@@ -188,7 +190,18 @@ class Supervisor:
             data={"matched": self.stats.signature_matches},
         ))
 
-        # TODO: setup queuing system
+        self.queue.build(self.functions, callers_map, callees_map)
+        self.stats.total_functions = self.queue.total
+
+        self._emit(Event(
+            type=EventType.TRIAGE_QUEUE_BUILT,
+            phase=Phase.TRIAGE,
+            message=(
+                f"Work queue built: {self.queue.total} functions to analyze "
+                f"(bottom-up order)."
+            ),
+            data={"queue_size": self.queue.total},
+        ))
 
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,
@@ -208,7 +221,63 @@ class Supervisor:
             message="Starting bottom-up analysis...",
         ))
 
-        # TODO: analyze functions bottom-up via queue system
+        while self.queue:
+            if self._paused:
+                time.sleep(0.1)
+                continue
+
+            item = self.queue.next()
+            if item is None:
+                break
+
+            func = item.function
+            self._emit(Event(
+                type=EventType.FUNCTION_START,
+                phase=Phase.ANALYSIS,
+                message=f"Analyzing {func.name} ({func.address_hex})...",
+                data={
+                    "address": func.address,
+                    "name": func.name,
+                    "size": func.size,
+                    "depth": item.depth,
+                    "progress": f"{self.queue.completed}/{self.queue.total}",
+                },
+            ))
+
+            try:
+                result = self._analyze_function(item)
+            except Exception as e:
+                result = FunctionResult(
+                    address=func.address,
+                    original_name=func.name,
+                    error=str(e),
+                )
+                self._emit(Event(
+                    type=EventType.FUNCTION_ERROR,
+                    phase=Phase.ANALYSIS,
+                    message=f"Error analyzing {func.name}: {e}",
+                    data={"address": func.address, "error": str(e)},
+                ))
+
+            self.results[func.address] = result
+            self.stats.record_result(result)
+
+            if not result.error and not result.skipped:
+                self._emit(Event(
+                    type=EventType.FUNCTION_COMPLETE,
+                    phase=Phase.ANALYSIS,
+                    message=(
+                        f"{func.address_hex} → {result.name} "
+                        f"(confidence: {result.confidence}%)"
+                    ),
+                    data={
+                        "address": func.address,
+                        "original_name": result.original_name,
+                        "name": result.name,
+                        "confidence": result.confidence,
+                        "classification": result.classification,
+                    },
+                ))
 
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,
