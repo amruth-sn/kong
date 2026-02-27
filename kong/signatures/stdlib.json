@@ -1,0 +1,643 @@
+[
+  {
+    "name": "memcpy",
+    "aliases": [
+      "__memcpy",
+      "memmove_chk"
+    ],
+    "description": "Copy memory block",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "byte-by-byte or word-by-word copy loop with source and destination pointers"
+      ],
+      "strings": []
+    },
+    "signature": "void *memcpy(void *dest, const void *src, size_t n)"
+  },
+  {
+    "name": "memset",
+    "aliases": [
+      "__memset",
+      "bzero"
+    ],
+    "description": "Fill memory with constant byte",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "loop filling memory with single byte value, often used for zeroing"
+      ],
+      "strings": []
+    },
+    "signature": "void *memset(void *s, int c, size_t n)"
+  },
+  {
+    "name": "memcmp",
+    "aliases": [
+      "__memcmp",
+      "bcmp"
+    ],
+    "description": "Compare memory blocks",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "byte-by-byte comparison loop with early return on mismatch"
+      ],
+      "strings": []
+    },
+    "signature": "int memcmp(const void *s1, const void *s2, size_t n)"
+  },
+  {
+    "name": "strlen",
+    "aliases": [
+      "__strlen"
+    ],
+    "description": "Get string length",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "loop scanning for null terminator byte"
+      ],
+      "strings": []
+    },
+    "signature": "size_t strlen(const char *s)"
+  },
+  {
+    "name": "strcmp",
+    "aliases": [
+      "__strcmp"
+    ],
+    "description": "Compare two strings",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "byte-by-byte comparison with null terminator check"
+      ],
+      "strings": []
+    },
+    "signature": "int strcmp(const char *s1, const char *s2)"
+  },
+  {
+    "name": "strncmp",
+    "aliases": [
+      "__strncmp"
+    ],
+    "description": "Compare two strings with length limit",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "byte-by-byte comparison with null terminator and counter check"
+      ],
+      "strings": []
+    },
+    "signature": "int strncmp(const char *s1, const char *s2, size_t n)"
+  },
+  {
+    "name": "strcpy",
+    "aliases": [
+      "__strcpy",
+      "strcpy_chk"
+    ],
+    "description": "Copy string",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "byte copy loop until null terminator"
+      ],
+      "strings": []
+    },
+    "signature": "char *strcpy(char *dest, const char *src)"
+  },
+  {
+    "name": "strncpy",
+    "aliases": [
+      "__strncpy",
+      "strncpy_chk"
+    ],
+    "description": "Copy string with length limit",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "byte copy loop with counter, null padding"
+      ],
+      "strings": []
+    },
+    "signature": "char *strncpy(char *dest, const char *src, size_t n)"
+  },
+  {
+    "name": "strcat",
+    "aliases": [
+      "__strcat"
+    ],
+    "description": "Concatenate strings",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "find end of dest string then copy src"
+      ],
+      "strings": []
+    },
+    "signature": "char *strcat(char *dest, const char *src)"
+  },
+  {
+    "name": "strchr",
+    "aliases": [
+      "__strchr",
+      "index"
+    ],
+    "description": "Find first occurrence of character in string",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "scan string for character match, return pointer or NULL"
+      ],
+      "strings": []
+    },
+    "signature": "char *strchr(const char *s, int c)"
+  },
+  {
+    "name": "strstr",
+    "aliases": [
+      "__strstr"
+    ],
+    "description": "Find substring",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "nested loop: outer scans haystack, inner compares needle"
+      ],
+      "strings": []
+    },
+    "signature": "char *strstr(const char *haystack, const char *needle)"
+  },
+  {
+    "name": "malloc",
+    "aliases": [
+      "__libc_malloc",
+      "dlmalloc",
+      "je_malloc"
+    ],
+    "description": "Allocate memory",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "heap allocation with size parameter, returns pointer or NULL"
+      ],
+      "strings": []
+    },
+    "signature": "void *malloc(size_t size)"
+  },
+  {
+    "name": "calloc",
+    "aliases": [
+      "__libc_calloc"
+    ],
+    "description": "Allocate and zero memory",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "malloc-like with nmemb*size multiplication and zeroing"
+      ],
+      "strings": []
+    },
+    "signature": "void *calloc(size_t nmemb, size_t size)"
+  },
+  {
+    "name": "realloc",
+    "aliases": [
+      "__libc_realloc"
+    ],
+    "description": "Reallocate memory block",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "resize allocation, copy existing data, free old block"
+      ],
+      "strings": []
+    },
+    "signature": "void *realloc(void *ptr, size_t size)"
+  },
+  {
+    "name": "free",
+    "aliases": [
+      "__libc_free",
+      "cfree",
+      "dlfree",
+      "je_free"
+    ],
+    "description": "Free allocated memory",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "heap deallocation, null check common"
+      ],
+      "strings": []
+    },
+    "signature": "void free(void *ptr)"
+  },
+  {
+    "name": "printf",
+    "aliases": [
+      "__printf",
+      "__printf_chk"
+    ],
+    "description": "Formatted output to stdout",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "format string parsing with va_list, writes to stdout"
+      ],
+      "strings": []
+    },
+    "signature": "int printf(const char *format, ...)"
+  },
+  {
+    "name": "fprintf",
+    "aliases": [
+      "__fprintf",
+      "__fprintf_chk"
+    ],
+    "description": "Formatted output to stream",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "format string parsing with va_list, writes to FILE*"
+      ],
+      "strings": []
+    },
+    "signature": "int fprintf(FILE *stream, const char *format, ...)"
+  },
+  {
+    "name": "sprintf",
+    "aliases": [
+      "__sprintf",
+      "__sprintf_chk"
+    ],
+    "description": "Formatted output to string buffer",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "format string parsing, writes to char buffer"
+      ],
+      "strings": []
+    },
+    "signature": "int sprintf(char *str, const char *format, ...)"
+  },
+  {
+    "name": "snprintf",
+    "aliases": [
+      "__snprintf",
+      "__snprintf_chk"
+    ],
+    "description": "Formatted output to string buffer with size limit",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "format string parsing with buffer size check"
+      ],
+      "strings": []
+    },
+    "signature": "int snprintf(char *str, size_t size, const char *format, ...)"
+  },
+  {
+    "name": "puts",
+    "aliases": [
+      "_IO_puts"
+    ],
+    "description": "Write string to stdout with newline",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "write string followed by newline to stdout"
+      ],
+      "strings": []
+    },
+    "signature": "int puts(const char *s)"
+  },
+  {
+    "name": "fopen",
+    "aliases": [
+      "fopen64",
+      "_IO_fopen"
+    ],
+    "description": "Open file",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "path string + mode string, returns FILE pointer"
+      ],
+      "strings": []
+    },
+    "signature": "FILE *fopen(const char *pathname, const char *mode)"
+  },
+  {
+    "name": "fclose",
+    "aliases": [
+      "_IO_fclose"
+    ],
+    "description": "Close file",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "flush buffer, release FILE structure"
+      ],
+      "strings": []
+    },
+    "signature": "int fclose(FILE *stream)"
+  },
+  {
+    "name": "fread",
+    "aliases": [
+      "_IO_fread"
+    ],
+    "description": "Read from file",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "read size*nmemb bytes from stream into buffer"
+      ],
+      "strings": []
+    },
+    "signature": "size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream)"
+  },
+  {
+    "name": "fwrite",
+    "aliases": [
+      "_IO_fwrite"
+    ],
+    "description": "Write to file",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "write size*nmemb bytes from buffer to stream"
+      ],
+      "strings": []
+    },
+    "signature": "size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)"
+  },
+  {
+    "name": "atoi",
+    "aliases": [
+      "__atoi"
+    ],
+    "description": "Convert string to integer",
+    "indicators": {
+      "constants": [
+        "0x30"
+      ],
+      "patterns": [
+        "skip whitespace, handle sign, accumulate digits"
+      ],
+      "strings": []
+    },
+    "signature": "int atoi(const char *nptr)"
+  },
+  {
+    "name": "strtol",
+    "aliases": [
+      "strtol_l",
+      "__strtol_internal"
+    ],
+    "description": "Convert string to long integer",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "skip whitespace, handle sign and base prefix, accumulate digits with overflow check"
+      ],
+      "strings": []
+    },
+    "signature": "long strtol(const char *nptr, char **endptr, int base)"
+  },
+  {
+    "name": "exit",
+    "aliases": [
+      "_exit",
+      "__exit",
+      "_Exit"
+    ],
+    "description": "Terminate process",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "atexit handler chain, flush streams, syscall exit_group"
+      ],
+      "strings": []
+    },
+    "signature": "void exit(int status)"
+  },
+  {
+    "name": "abort",
+    "aliases": [
+      "__abort"
+    ],
+    "description": "Abnormal termination",
+    "indicators": {
+      "constants": [
+        "6"
+      ],
+      "patterns": [
+        "raise SIGABRT, noreturn"
+      ],
+      "strings": []
+    },
+    "signature": "void abort(void)"
+  },
+  {
+    "name": "qsort",
+    "aliases": [
+      "__qsort"
+    ],
+    "description": "Sort array",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "comparison function pointer callback, pivot selection, partitioning"
+      ],
+      "strings": []
+    },
+    "signature": "void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *))"
+  },
+  {
+    "name": "bsearch",
+    "aliases": [
+      "__bsearch"
+    ],
+    "description": "Binary search sorted array",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "divide-and-conquer with comparison callback, lo/hi/mid pattern"
+      ],
+      "strings": []
+    },
+    "signature": "void *bsearch(const void *key, const void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *))"
+  },
+  {
+    "name": "__stack_chk_fail",
+    "aliases": [
+      "__stack_smash_handler"
+    ],
+    "description": "Stack canary check failure handler",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "noreturn, called when stack canary mismatch detected"
+      ],
+      "strings": [
+        "stack smashing detected",
+        "*** stack smashing"
+      ]
+    },
+    "signature": "void __stack_chk_fail(void)"
+  },
+  {
+    "name": "__libc_start_main",
+    "aliases": [
+      "__libc_start_call_main"
+    ],
+    "description": "C runtime entry point",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "calls main with argc/argv/envp, sets up atexit"
+      ],
+      "strings": []
+    },
+    "signature": "int __libc_start_main(int (*main)(int, char **, char **), int argc, char **argv, void (*init)(void), void (*fini)(void), void (*rtld_fini)(void), void *stack_end)"
+  },
+  {
+    "name": "_start",
+    "aliases": [
+      "_entry"
+    ],
+    "description": "ELF entry point",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "first function, sets up stack alignment, calls __libc_start_main"
+      ],
+      "strings": []
+    },
+    "signature": "void _start(void)"
+  },
+  {
+    "name": "__cxa_atexit",
+    "aliases": [],
+    "description": "Register destructor for C++ static object",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "registers function pointer for cleanup at exit"
+      ],
+      "strings": []
+    },
+    "signature": "int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle)"
+  },
+  {
+    "name": "getenv",
+    "aliases": [
+      "__getenv"
+    ],
+    "description": "Get environment variable",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "scan environ array for name=value match"
+      ],
+      "strings": []
+    },
+    "signature": "char *getenv(const char *name)"
+  },
+  {
+    "name": "open",
+    "aliases": [
+      "open64",
+      "__open"
+    ],
+    "description": "Open file descriptor",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "syscall open with path, flags, optional mode"
+      ],
+      "strings": []
+    },
+    "signature": "int open(const char *pathname, int flags, ...)"
+  },
+  {
+    "name": "close",
+    "aliases": [
+      "__close"
+    ],
+    "description": "Close file descriptor",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "syscall close on fd"
+      ],
+      "strings": []
+    },
+    "signature": "int close(int fd)"
+  },
+  {
+    "name": "read",
+    "aliases": [
+      "__read"
+    ],
+    "description": "Read from file descriptor",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "syscall read: fd, buffer, count"
+      ],
+      "strings": []
+    },
+    "signature": "ssize_t read(int fd, void *buf, size_t count)"
+  },
+  {
+    "name": "write",
+    "aliases": [
+      "__write"
+    ],
+    "description": "Write to file descriptor",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "syscall write: fd, buffer, count"
+      ],
+      "strings": []
+    },
+    "signature": "ssize_t write(int fd, const void *buf, size_t count)"
+  },
+  {
+    "name": "mmap",
+    "aliases": [
+      "mmap64",
+      "__mmap"
+    ],
+    "description": "Map memory",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "syscall mmap with addr, length, prot, flags, fd, offset"
+      ],
+      "strings": []
+    },
+    "signature": "void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)"
+  },
+  {
+    "name": "munmap",
+    "aliases": [
+      "__munmap"
+    ],
+    "description": "Unmap memory",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "syscall munmap with addr, length"
+      ],
+      "strings": []
+    },
+    "signature": "int munmap(void *addr, size_t length)"
+  }
+]

@@ -1,0 +1,260 @@
+[
+  {
+    "name": "rc4_init",
+    "aliases": [
+      "rc4_ksa",
+      "arcfour_init",
+      "arc4_init"
+    ],
+    "description": "RC4 Key Scheduling Algorithm",
+    "indicators": {
+      "constants": [
+        "0x100"
+      ],
+      "patterns": [
+        "256-iteration loop initializing sequential array, then swap loop using key bytes modulo keylen"
+      ],
+      "strings": []
+    },
+    "signature": "void rc4_init(uint8_t *state, const uint8_t *key, int keylen)"
+  },
+  {
+    "name": "rc4_crypt",
+    "aliases": [
+      "rc4_encrypt",
+      "rc4_decrypt",
+      "arcfour_crypt",
+      "arc4_crypt"
+    ],
+    "description": "RC4 stream cipher encrypt/decrypt (PRGA)",
+    "indicators": {
+      "constants": [
+        "0xff"
+      ],
+      "patterns": [
+        "state array swap with i,j indices, XOR output byte with data"
+      ],
+      "strings": []
+    },
+    "signature": "void rc4_crypt(uint8_t *state, uint8_t *data, int len)"
+  },
+  {
+    "name": "aes_sbox_lookup",
+    "aliases": [
+      "aes_sub_bytes",
+      "SubBytes"
+    ],
+    "description": "AES S-box substitution",
+    "indicators": {
+      "constants": [
+        "0x63",
+        "0x7c",
+        "0x77",
+        "0x7b",
+        "0xf2",
+        "0x6b",
+        "0x6f",
+        "0xc5"
+      ],
+      "patterns": [
+        "256-byte lookup table with known AES S-box values"
+      ],
+      "strings": []
+    },
+    "signature": "void aes_sub_bytes(uint8_t *state)"
+  },
+  {
+    "name": "aes_key_expansion",
+    "aliases": [
+      "AES_set_encrypt_key",
+      "aes_expand_key",
+      "KeyExpansion"
+    ],
+    "description": "AES key schedule expansion",
+    "indicators": {
+      "constants": [
+        "0x01",
+        "0x02",
+        "0x04",
+        "0x08",
+        "0x10",
+        "0x20",
+        "0x40",
+        "0x80",
+        "0x1b",
+        "0x36"
+      ],
+      "patterns": [
+        "round constant (Rcon) array, RotWord, SubWord operations, XOR with previous round key"
+      ],
+      "strings": []
+    },
+    "signature": "void aes_key_expansion(const uint8_t *key, uint8_t *round_keys, int key_len)"
+  },
+  {
+    "name": "sha256_init",
+    "aliases": [
+      "SHA256_Init",
+      "sha256_start"
+    ],
+    "description": "SHA-256 initialization with standard IV",
+    "indicators": {
+      "constants": [
+        "0x6a09e667",
+        "0xbb67ae85",
+        "0x3c6ef372",
+        "0xa54ff53a",
+        "0x510e527f",
+        "0x9b05688c",
+        "0x1f83d9ab",
+        "0x5be0cd19"
+      ],
+      "patterns": [
+        "sets 8 state words to SHA-256 initialization vectors"
+      ],
+      "strings": []
+    },
+    "signature": "void sha256_init(sha256_ctx *ctx)"
+  },
+  {
+    "name": "sha256_transform",
+    "aliases": [
+      "SHA256_Transform",
+      "sha256_compress",
+      "sha256_process_block"
+    ],
+    "description": "SHA-256 compression function",
+    "indicators": {
+      "constants": [
+        "0x428a2f98",
+        "0x71374491",
+        "0xb5c0fbcf",
+        "0xe9b5dba5"
+      ],
+      "patterns": [
+        "64-round loop with message schedule, Ch/Maj/Sigma operations"
+      ],
+      "strings": []
+    },
+    "signature": "void sha256_transform(uint32_t *state, const uint8_t *block)"
+  },
+  {
+    "name": "md5_init",
+    "aliases": [
+      "MD5_Init",
+      "MD5Init"
+    ],
+    "description": "MD5 initialization",
+    "indicators": {
+      "constants": [
+        "0x67452301",
+        "0xefcdab89",
+        "0x98badcfe",
+        "0x10325476"
+      ],
+      "patterns": [
+        "sets 4 state words to MD5 initialization vectors"
+      ],
+      "strings": []
+    },
+    "signature": "void md5_init(md5_ctx *ctx)"
+  },
+  {
+    "name": "md5_transform",
+    "aliases": [
+      "MD5_Transform",
+      "MD5Transform",
+      "md5_compress"
+    ],
+    "description": "MD5 compression function",
+    "indicators": {
+      "constants": [
+        "0xd76aa478",
+        "0xe8c7b756",
+        "0x242070db",
+        "0xc1bdceee"
+      ],
+      "patterns": [
+        "64-step processing with F/G/H/I rounds, sine-derived constants"
+      ],
+      "strings": []
+    },
+    "signature": "void md5_transform(uint32_t *state, const uint8_t *block)"
+  },
+  {
+    "name": "sha1_init",
+    "aliases": [
+      "SHA1_Init",
+      "SHA1Init"
+    ],
+    "description": "SHA-1 initialization",
+    "indicators": {
+      "constants": [
+        "0x67452301",
+        "0xefcdab89",
+        "0x98badcfe",
+        "0x10325476",
+        "0xc3d2e1f0"
+      ],
+      "patterns": [
+        "sets 5 state words to SHA-1 initialization vectors"
+      ],
+      "strings": []
+    },
+    "signature": "void sha1_init(sha1_ctx *ctx)"
+  },
+  {
+    "name": "crc32_update",
+    "aliases": [
+      "crc32",
+      "crc32_byte"
+    ],
+    "description": "CRC-32 checksum update",
+    "indicators": {
+      "constants": [
+        "0xedb88320"
+      ],
+      "patterns": [
+        "256-entry lookup table or bit-by-bit with polynomial 0xedb88320"
+      ],
+      "strings": []
+    },
+    "signature": "uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)"
+  },
+  {
+    "name": "base64_encode",
+    "aliases": [
+      "b64_encode",
+      "EVP_EncodeBlock"
+    ],
+    "description": "Base64 encoding",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "3-byte to 4-char conversion using alphabet lookup table"
+      ],
+      "strings": [
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+      ]
+    },
+    "signature": "int base64_encode(const uint8_t *input, int input_len, char *output)"
+  },
+  {
+    "name": "base64_decode",
+    "aliases": [
+      "b64_decode",
+      "EVP_DecodeBlock"
+    ],
+    "description": "Base64 decoding",
+    "indicators": {
+      "constants": [],
+      "patterns": [
+        "4-char to 3-byte conversion using reverse lookup"
+      ],
+      "strings": [
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+      ]
+    },
+    "signature": "int base64_decode(const char *input, int input_len, uint8_t *output)"
+  }
+]

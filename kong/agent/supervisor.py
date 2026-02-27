@@ -9,28 +9,15 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from kong.agent.analyzer import Analyzer, LLMClient
 from kong.agent.events import Event, EventCallback, EventType, Phase
-from kong.agent.queue import WorkQueue
+from kong.agent.models import FunctionResult
+from kong.agent.queue import WorkItem, WorkQueue
+from kong.agent.signatures import SignatureDB
+from kong.agent.triage import TriageAgent, TriageResult
 from kong.config import KongConfig
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo
-
-
-@dataclass
-class FunctionResult:
-    """Result of analyzing a single function."""
-    address: int
-    original_name: str
-    name: str = ""
-    signature: str = ""
-    confidence: int = 0
-    classification: str = ""
-    comments: str = ""
-    reasoning: str = ""
-    error: str = ""
-    llm_calls: int = 0
-    skipped: bool = False
-    skip_reason: str = ""
 
 
 @dataclass
@@ -69,6 +56,8 @@ class AnalysisStats:
         self.llm_calls += result.llm_calls
         if result.name and result.name != result.original_name:
             self.named += 1
+        # TODO: calibrate these eventually. these buckets are arbitrary, need eval data to
+        # determine meaningful confidence tiers for the LLM's self-reported scores.
         if result.confidence >= 80:
             self.high_confidence += 1
         elif result.confidence >= 50:
@@ -90,17 +79,22 @@ class Supervisor:
         self,
         client: GhidraClient,
         config: KongConfig,
+        llm_client: LLMClient | None = None,
+        signature_db: SignatureDB | None = None,
     ) -> None:
         self.client = client
         self.config = config
+        self.llm_client = llm_client
+        self.sig_db = signature_db or SignatureDB()
         self.queue = WorkQueue()
         self.stats = AnalysisStats()
-        self.results: dict[int, FunctionResult] = {}  # Mapping of address to FunctionResult
-        self.binary_info: BinaryInfo | None = None # initially None until set in _run_triage    
-        self.functions: list[FunctionInfo] = [] # empty until set in _run_triage
-        self.strings: list = [] # empty until set in _run_triage
-        self._listeners: list[EventCallback] = [] # empty until on_event is called
-        self._paused: bool = False # False until pause or resume is called
+        self.results: dict[int, FunctionResult] = {}
+        self.triage_result: TriageResult | None = None
+        self.binary_info: BinaryInfo | None = None
+        self.functions: list[FunctionInfo] = []
+        self.strings: list = []
+        self._listeners: list[EventCallback] = []
+        self._paused: bool = False
 
     def on_event(self, callback: EventCallback) -> None:
         """Register an event listener."""
@@ -157,9 +151,17 @@ class Supervisor:
             message="Starting triage...",
         ))
 
-        self.binary_info = self.client.get_binary_info()
-        self.functions = self.client.list_functions()
-        self.strings = self.client.get_strings()
+        triage = TriageAgent(self.client, signature_db=self.sig_db)
+        result = triage.run()
+        self.triage_result = result
+
+        # propagate triage results to supervisor state
+        self.binary_info = result.binary_info
+        self.functions = result.functions
+        self.strings = result.strings
+        self.queue = result.queue
+        self.stats.total_functions = result.queue_size
+        self.stats.signature_matches = result.matched_count
 
         self._emit(Event(
             type=EventType.TRIAGE_FUNCTIONS_ENUMERATED,
@@ -175,23 +177,12 @@ class Supervisor:
             },
         ))
 
-        callers_map: dict[int, list[int]] = {}
-        callees_map: dict[int, list[int]] = {}
-        for func in self.functions:
-            addr = func.address
-            callers_map[addr] = self.client.get_callers(addr)
-            callees_map[addr] = self.client.get_callees(addr)
-
-        # TODO: Match against signature DB.
         self._emit(Event(
             type=EventType.TRIAGE_SIGNATURES_MATCHED,
             phase=Phase.TRIAGE,
             message=f"Matched {self.stats.signature_matches} functions against signature DB.",
             data={"matched": self.stats.signature_matches},
         ))
-
-        self.queue.build(self.functions, callers_map, callees_map)
-        self.stats.total_functions = self.queue.total
 
         self._emit(Event(
             type=EventType.TRIAGE_QUEUE_BUILT,
@@ -202,6 +193,14 @@ class Supervisor:
             ),
             data={"queue_size": self.queue.total},
         ))
+
+        if result.language_hints.language != "C":
+            self._emit(Event(
+                type=EventType.PHASE_START,
+                phase=Phase.TRIAGE,
+                message=f"Detected language: {result.language_hints.language}",
+                data={"language": result.language_hints.language},
+            ))
 
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,
@@ -288,12 +287,8 @@ class Supervisor:
             ),
         ))
 
-    def _analyze_function(self, item) -> FunctionResult:
-        """Analyze a single function. Delegates to the analyzer agent.
-
-        TODO: Implement analyzer agent here. 
-        This is the integration point where the analyzer agent will plug in. 
-        """
+    def _analyze_function(self, item: WorkItem) -> FunctionResult:
+        """Analyze a single function. Delegates to the Analyzer agent."""
         func = item.function
 
         if func.classification and func.classification.value == "trivial":
@@ -304,14 +299,20 @@ class Supervisor:
                 skip_reason="trivial",
             )
 
-        # TODO: analyzer agent something like
-        # analyzer = Analyzer(self.client, self.llm_client, self.config)
-        # return analyzer.analyze(item, context=self._build_context(item))
-        return FunctionResult(
-            address=func.address,
-            original_name=func.name,
-            name=func.name,  # unchanged for now
-            confidence=0,
+        if self.llm_client is None:
+            return FunctionResult(
+                address=func.address,
+                original_name=func.name,
+                name=func.name,
+                confidence=0,
+            )
+
+        analyzer = Analyzer(self.client, self.llm_client)
+        return analyzer.analyze(
+            item,
+            binary_info=self.binary_info,
+            known_results=self.results,
+            strings=self.strings,
         )
 
     def _run_cleanup(self) -> None:
