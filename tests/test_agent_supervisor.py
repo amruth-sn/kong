@@ -3,7 +3,8 @@
 from unittest.mock import MagicMock, patch
 
 from kong.agent.events import Event, EventType, Phase
-from kong.agent.supervisor import AnalysisStats, FunctionResult, Supervisor
+from kong.agent.models import FunctionResult
+from kong.agent.supervisor import AnalysisStats, Supervisor
 from kong.config import KongConfig, OutputConfig
 from kong.ghidra.types import BinaryInfo, FunctionClassification, FunctionInfo
 
