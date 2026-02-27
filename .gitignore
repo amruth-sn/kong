@@ -201,8 +201,22 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .claude
+CLAUDE.md
 
 # Marimo
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+#internal binarytesting
+.gpr
+.pak
+.bak
+.dat
+.gbf
+.plist
+test_arm64_stripped_ghidra/
+test_arm64_symbols_ghidra/
+test_arm64_symbols.dSYM/
+test_arm64_stripped
+test_arm64_symbols
