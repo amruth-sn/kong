@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
-from kong.agent.analyzer import Analyzer, LLMClient
-from kong.agent.deobfuscator import Deobfuscator
+from kong.agent.analyzer import Analyzer, LLMClient, LLMResponse
+from kong.agent.deobfuscator import Deobfuscator, classify_obfuscation
 from kong.agent.events import Event, EventCallback, EventType, Phase
 from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem, WorkQueue
@@ -24,13 +25,20 @@ from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
 
 logger = logging.getLogger(__name__)
 
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+SONNET_MODEL = "claude-sonnet-4-20250514"
+
+MAX_PARALLEL_LLM = 4
+REQUEST_STAGGER_SECONDS = 0.5
+
 
 @dataclass
 class AnalysisStats:
     """Aggregate statistics for the full run."""
     total_functions: int = 0
     analyzed: int = 0
-    named: int = 0
+    renamed: int = 0
+    confirmed: int = 0
     high_confidence: int = 0   # >= 80
     medium_confidence: int = 0  # 50-79
     low_confidence: int = 0     # < 50
@@ -40,6 +48,10 @@ class AnalysisStats:
     start_time: float = 0.0
     end_time: float = 0.0
     signature_matches: int = 0
+
+    @property
+    def named(self) -> int:
+        return self.renamed + self.confirmed
 
     @property
     def duration_seconds(self) -> float:
@@ -59,8 +71,11 @@ class AnalysisStats:
             return
         self.analyzed += 1
         self.llm_calls += result.llm_calls
-        if result.name and result.name != result.original_name:
-            self.named += 1
+        if result.name:
+            if result.name != result.original_name:
+                self.renamed += 1
+            else:
+                self.confirmed += 1
         # TODO: calibrate these eventually. these buckets are arbitrary, need eval data to
         # determine meaningful confidence tiers for the LLM's self-reported scores.
         if result.confidence >= 80:
@@ -219,73 +234,100 @@ class Supervisor:
 
 
     def _run_analysis(self) -> None:
-        """Analyze each function bottom-up via LLM."""
+        """Analyze functions bottom-up via LLM, parallelized within each depth level."""
         self._emit(Event(
             type=EventType.PHASE_START,
             phase=Phase.ANALYSIS,
             message="Starting bottom-up analysis...",
         ))
 
-        while self.queue:
+        depth_batches = self.queue.items_by_depth()
+        completed_count = 0
+
+        for batch in depth_batches:
             if self._paused:
                 time.sleep(0.1)
                 continue
 
-            item = self.queue.next()
-            if item is None:
-                break
+            parallel_items: list[tuple[WorkItem, str, str]] = []
+            sequential_items: list[WorkItem] = []
+            analyzer = Analyzer(self.client, self.llm_client) if self.llm_client else None
 
-            func = item.function
-            self._emit(Event(
-                type=EventType.FUNCTION_START,
-                phase=Phase.ANALYSIS,
-                message=f"Analyzing {func.name} ({func.address_hex})...",
-                data={
-                    "address": func.address,
-                    "name": func.name,
-                    "size": func.size,
-                    "depth": item.depth,
-                    "progress": f"{self.queue.completed}/{self.queue.total}",
-                },
-            ))
+            for item in batch:
+                func = item.function
 
-            try:
-                result = self._analyze_function(item)
-            except Exception as e:
-                result = FunctionResult(
-                    address=func.address,
-                    original_name=func.name,
-                    error=str(e),
+                if func.classification and func.classification.value == "trivial":
+                    result = FunctionResult(
+                        address=func.address,
+                        original_name=func.name,
+                        skipped=True,
+                        skip_reason="trivial",
+                    )
+                    self.results[func.address] = result
+                    self.stats.record_result(result)
+                    completed_count += 1
+                    continue
+
+                if analyzer is None:
+                    result = FunctionResult(
+                        address=func.address,
+                        original_name=func.name,
+                        name=func.name,
+                        confidence=0,
+                    )
+                    self.results[func.address] = result
+                    self.stats.record_result(result)
+                    completed_count += 1
+                    continue
+
+                decompilation = self.client.get_decompilation(func.address)
+                techniques = classify_obfuscation(decompilation)
+
+                if techniques:
+                    sequential_items.append(item)
+                    continue
+
+                model = self._pick_model(item, decompilation)
+                context = analyzer._build_context(
+                    item, self.binary_info, self.results, self.strings,
                 )
+                prompt = analyzer._build_prompt(context)
+                parallel_items.append((item, prompt, model))
+
+            if parallel_items:
+                self._analyze_parallel(parallel_items, completed_count)
+                completed_count += len(parallel_items)
+
+            for item in sequential_items:
+                completed_count += 1
+                func = item.function
                 self._emit(Event(
-                    type=EventType.FUNCTION_ERROR,
+                    type=EventType.FUNCTION_START,
                     phase=Phase.ANALYSIS,
-                    message=f"Error analyzing {func.name}: {e}",
-                    data={"address": func.address, "error": str(e)},
-                ))
-
-            self.results[func.address] = result
-            self.stats.record_result(result)
-
-            if result.struct_proposals:
-                self.struct_accumulator.add_proposals(func.address, result.struct_proposals)
-
-            if not result.error and not result.skipped:
-                self._emit(Event(
-                    type=EventType.FUNCTION_COMPLETE,
-                    phase=Phase.ANALYSIS,
-                    message=(
-                        f"{func.address_hex} → {result.name} "
-                        f"(confidence: {result.confidence}%)"
-                    ),
+                    message=f"Analyzing {func.name} ({func.address_hex})...",
                     data={
                         "address": func.address,
-                        "original_name": result.original_name,
-                        "name": result.name,
-                        "confidence": result.confidence,
-                        "classification": result.classification,
+                        "name": func.name,
+                        "size": func.size,
+                        "depth": item.depth,
+                        "progress": f"{completed_count}/{self.queue.total}",
                     },
                 ))
+                try:
+                    result = self._analyze_function_sequential(item)
+                except Exception as e:
+                    result = FunctionResult(
+                        address=func.address,
+                        original_name=func.name,
+                        error=str(e),
+                    )
+                    self._emit(Event(
+                        type=EventType.FUNCTION_ERROR,
+                        phase=Phase.ANALYSIS,
+                        message=f"Error analyzing {func.name}: {e}",
+                        data={"address": func.address, "error": str(e)},
+                    ))
+                self._record_analysis_result(func, result)
 
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,
@@ -296,26 +338,86 @@ class Supervisor:
             ),
         ))
 
-    def _analyze_function(self, item: WorkItem) -> FunctionResult:
-        """Analyze a single function. Delegates to the Analyzer agent."""
+    def _pick_model(self, item: WorkItem, decompilation: str) -> str:
+        """Choose Haiku for small/simple functions, Sonnet for complex ones."""
+        line_count = decompilation.count("\n")
+        if item.function.size <= 200 and len(item.callees) <= 2 and line_count <= 30:
+            return HAIKU_MODEL
+        return SONNET_MODEL
+
+    def _analyze_parallel(
+        self,
+        items: list[tuple[WorkItem, str, str]],
+        completed_base: int,
+    ) -> None:
+        """Send LLM calls in parallel for a batch of non-obfuscated functions."""
+        for idx, (item, _, model) in enumerate(items):
+            func = item.function
+            self._emit(Event(
+                type=EventType.FUNCTION_START,
+                phase=Phase.ANALYSIS,
+                message=f"Analyzing {func.name} ({func.address_hex})...",
+                data={
+                    "address": func.address,
+                    "name": func.name,
+                    "size": func.size,
+                    "depth": item.depth,
+                    "model": model.split("-")[1] if "-" in model else model,
+                    "progress": f"{completed_base + idx + 1}/{self.queue.total}",
+                },
+            ))
+
+        def _call_llm(prompt: str, model: str) -> LLMResponse:
+            assert self.llm_client is not None
+            return self.llm_client.analyze_function(prompt, model=model)
+
+        futures_map: dict[object, WorkItem] = {}
+
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_LLM) as executor:
+            for i, (item, prompt, model) in enumerate(items):
+                if i > 0 and i % MAX_PARALLEL_LLM == 0:
+                    time.sleep(REQUEST_STAGGER_SECONDS)
+                future = executor.submit(_call_llm, prompt, model)
+                futures_map[future] = item
+
+            for future in as_completed(futures_map):
+                item = futures_map[future]
+                func = item.function
+                try:
+                    response = future.result()
+                    sig_applied = self._write_back_response(func.address, response)
+                    result = FunctionResult(
+                        address=func.address,
+                        original_name=func.name,
+                        name=response.name,
+                        signature=response.signature,
+                        confidence=response.confidence,
+                        classification=response.classification,
+                        comments=response.comments,
+                        reasoning=response.reasoning,
+                        llm_calls=1,
+                        signature_applied=sig_applied,
+                        struct_proposals=response.struct_proposals,
+                    )
+                except Exception as e:
+                    result = FunctionResult(
+                        address=func.address,
+                        original_name=func.name,
+                        error=str(e),
+                    )
+                    self._emit(Event(
+                        type=EventType.FUNCTION_ERROR,
+                        phase=Phase.ANALYSIS,
+                        message=f"Error analyzing {func.name}: {e}",
+                        data={"address": func.address, "error": str(e)},
+                    ))
+
+                self._record_analysis_result(func, result)
+
+    def _analyze_function_sequential(self, item: WorkItem) -> FunctionResult:
+        """Analyze a single function sequentially (used for obfuscated functions)."""
+        assert self.llm_client is not None
         func = item.function
-
-        if func.classification and func.classification.value == "trivial":
-            return FunctionResult(
-                address=func.address,
-                original_name=func.name,
-                skipped=True,
-                skip_reason="trivial",
-            )
-
-        if self.llm_client is None:
-            return FunctionResult(
-                address=func.address,
-                original_name=func.name,
-                name=func.name,
-                confidence=0,
-            )
-
         deobfuscator = Deobfuscator(self.client, self.llm_client)
         analyzer = Analyzer(self.client, self.llm_client, deobfuscator=deobfuscator)
         result = analyzer.analyze(
@@ -323,6 +425,7 @@ class Supervisor:
             binary_info=self.binary_info,
             known_results=self.results,
             strings=self.strings,
+            model=SONNET_MODEL,
         )
 
         if result.obfuscation_techniques:
@@ -341,6 +444,55 @@ class Supervisor:
             ))
 
         return result
+
+    def _write_back_response(self, addr: int, response: LLMResponse) -> bool:
+        """Write LLM response back to Ghidra (rename, signature, comments)."""
+        sig_ok = True
+        if response.name:
+            try:
+                self.client.rename_function(addr, response.name)
+            except Exception as e:
+                logger.warning("Failed to rename 0x%08x to %s: %s", addr, response.name, e)
+
+        if response.signature:
+            try:
+                self.client.set_function_signature(addr, response.signature)
+            except Exception as e:
+                logger.debug("Signature deferred for 0x%08x (will retry in cleanup): %s", addr, e)
+                sig_ok = False
+
+        if response.comments:
+            try:
+                self.client.add_comment(addr, response.comments)
+            except Exception as e:
+                logger.debug("Failed to add comment at 0x%08x: %s", addr, e)
+
+        return sig_ok
+
+    def _record_analysis_result(self, func: FunctionInfo, result: FunctionResult) -> None:
+        """Record a function result into the results dict and stats."""
+        self.results[func.address] = result
+        self.stats.record_result(result)
+
+        if result.struct_proposals:
+            self.struct_accumulator.add_proposals(func.address, result.struct_proposals)
+
+        if not result.error and not result.skipped:
+            self._emit(Event(
+                type=EventType.FUNCTION_COMPLETE,
+                phase=Phase.ANALYSIS,
+                message=(
+                    f"{func.address_hex} → {result.name} "
+                    f"(confidence: {result.confidence}%)"
+                ),
+                data={
+                    "address": func.address,
+                    "original_name": result.original_name,
+                    "name": result.name,
+                    "confidence": result.confidence,
+                    "classification": result.classification,
+                },
+            ))
 
     def _run_cleanup(self) -> None:
         """Unify struct types, apply to Ghidra, re-analyze affected and low-confidence functions."""
@@ -536,6 +688,8 @@ class Supervisor:
             "total_functions": s.total_functions,
             "analyzed": s.analyzed,
             "named": s.named,
+            "renamed": s.renamed,
+            "confirmed": s.confirmed,
             "high_confidence": s.high_confidence,
             "medium_confidence": s.medium_confidence,
             "low_confidence": s.low_confidence,

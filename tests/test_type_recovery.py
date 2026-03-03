@@ -597,6 +597,8 @@ class TestSupervisorCleanupIntegration:
         client.get_strings.return_value = []
         client.get_callers.return_value = []
         client.get_callees.return_value = []
+        client.get_decompilation.return_value = "void f() {}"
+        client.get_xrefs_from.return_value = []
 
         response = LLMResponse(name="helper", confidence=80)
         llm = MagicMock()
@@ -640,7 +642,7 @@ class TestSupervisorCleanupIntegration:
 
         call_count = 0
 
-        def varying_response(prompt: str) -> LLMResponse:
+        def varying_response(prompt: str, **kwargs: object) -> LLMResponse:
             nonlocal call_count
             call_count += 1
             if call_count == 1:

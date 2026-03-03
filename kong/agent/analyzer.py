@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class LLMClient(Protocol):
     """Protocol for LLM interaction."""
 
-    def analyze_function(self, prompt: str) -> LLMResponse: ...
+    def analyze_function(self, prompt: str, *, model: str | None = None) -> LLMResponse: ...
 
     def analyze_with_tools(
         self,
@@ -128,6 +128,7 @@ class Analyzer:
         known_results: dict[int, FunctionResult],
         strings: list[StringEntry],
         known_types: list[StructDefinition] | None = None,
+        model: str | None = None,
     ) -> FunctionResult:
         """Full analysis pipeline for one function."""
         from kong.agent.deobfuscator import Deobfuscator, classify_obfuscation
@@ -157,7 +158,7 @@ class Analyzer:
             )
 
         prompt = self._build_prompt(context)
-        response = self.llm.analyze_function(prompt)
+        response = self.llm.analyze_function(prompt, model=model)
         sig_applied = self._write_back(func.address, response)
 
         return FunctionResult(
@@ -363,7 +364,7 @@ class Analyzer:
             try:
                 self.client.set_function_signature(addr, response.signature)
             except Exception as e:
-                logger.warning("Failed to set signature at 0x%08x: %s", addr, e)
+                logger.debug("Signature deferred for 0x%08x (will retry in cleanup): %s", addr, e)
                 signature_ok = False
 
         if response.comments:
@@ -408,20 +409,24 @@ class Analyzer:
 
         struct_proposals = []
         for sp in data.get("struct_proposals", []):
-            if "name" not in sp or "total_size" not in sp:
+            if not sp.get("name") or not sp.get("total_size"):
+                continue
+            try:
+                total_size = int(sp["total_size"])
+            except (ValueError, TypeError):
                 continue
             fields = [
                 StructFieldProposal(
                     name=f.get("name", f"field_{i}"),
                     data_type=f.get("data_type", "undefined"),
-                    offset=f.get("offset", 0),
-                    size=f.get("size", 4),
+                    offset=int(f.get("offset", 0)),
+                    size=int(f.get("size", 4)),
                 )
                 for i, f in enumerate(sp.get("fields", []))
             ]
             struct_proposals.append(StructProposal(
                 name=sp["name"],
-                total_size=sp["total_size"],
+                total_size=total_size,
                 fields=fields,
                 used_by_param=sp.get("used_by_param", ""),
             ))

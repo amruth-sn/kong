@@ -127,12 +127,21 @@ def analyze(
     finally:
         stats = supervisor.stats
         console.print()
-        console.print(f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named")
+        console.print(
+            f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named "
+            f"({stats.renamed} renamed, {stats.confirmed} confirmed)"
+        )
         console.print(
             f"[bold]Confidence:[/bold] {stats.high_confidence} high, "
             f"{stats.medium_confidence} med, {stats.low_confidence} low"
         )
         console.print(f"[bold]LLM calls:[/bold] {stats.llm_calls}")
+        for model_name, mu in llm_client.usage.by_model.items():
+            short_name = model_name.split("-")[1] if "-" in model_name else model_name
+            console.print(
+                f"  {short_name}: {mu.calls} calls, "
+                f"${mu.cost_usd(model_name):.4f}"
+            )
         console.print(f"[bold]Cost:[/bold] ${llm_client.total_cost_usd:.4f}")
         console.print(f"[bold]Duration:[/bold] {stats.duration_seconds:.1f}s")
         client.close()

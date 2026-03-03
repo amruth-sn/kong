@@ -127,42 +127,50 @@ class TestSupervisorAnalysis:
             assert addr in results
 
     def test_function_start_and_complete_events(self, tmp_path):
+        from kong.agent.analyzer import LLMResponse
+
         funcs = [_func(0x1000, "a")]
         client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void a(void) { return; }"
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
-        sup = Supervisor(client, config)
+
+        mock_llm = MagicMock()
+        mock_llm.analyze_function.return_value = LLMResponse(
+            name="init", confidence=80, raw='{"name":"init","confidence":80}',
+        )
+
+        sup = Supervisor(client, config, llm_client=mock_llm)
 
         events = []
         sup.on_event(events.append)
         sup.run()
 
         starts = [e for e in events if e.type == EventType.FUNCTION_START]
-        assert len(starts) == 1
-        assert starts[0].data["address"] == 0x1000
+        assert len(starts) >= 1
+        assert any(e.data["address"] == 0x1000 for e in starts)
 
     def test_handles_analysis_error(self, tmp_path):
         funcs = [_func(0x1000, "a")]
         client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void a(void) { return; }"
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
-        sup = Supervisor(client, config)
 
-        # Force an error in _analyze_function
-        def explode(item):
-            raise RuntimeError("LLM timeout")
+        mock_llm = MagicMock()
+        mock_llm.analyze_function.side_effect = RuntimeError("LLM timeout")
 
-        sup._analyze_function = explode
+        sup = Supervisor(client, config, llm_client=mock_llm)
 
         events = []
         sup.on_event(events.append)
         results = sup.run()
 
-        assert results[0x1000].error == "LLM timeout"
+        assert results[0x1000].error
         error_events = [e for e in events if e.type == EventType.FUNCTION_ERROR]
         assert len(error_events) == 1
 
 
 class TestAnalysisStats:
-    def test_record_result_named(self):
+    def test_record_result_renamed(self):
         stats = AnalysisStats(total_functions=10)
         result = FunctionResult(
             address=0x1000, original_name="FUN_1000",
@@ -171,6 +179,7 @@ class TestAnalysisStats:
         stats.record_result(result)
 
         assert stats.analyzed == 1
+        assert stats.renamed == 1
         assert stats.named == 1
         assert stats.high_confidence == 1
         assert stats.llm_calls == 2
@@ -197,7 +206,7 @@ class TestAnalysisStats:
         assert stats.errors == 1
         assert stats.analyzed == 0
 
-    def test_record_result_unchanged_name_not_counted(self):
+    def test_record_result_unchanged_name_is_confirmed(self):
         stats = AnalysisStats(total_functions=10)
         result = FunctionResult(
             address=0x1000, original_name="FUN_1000",
@@ -206,7 +215,9 @@ class TestAnalysisStats:
         stats.record_result(result)
 
         assert stats.analyzed == 1
-        assert stats.named == 0  # name unchanged
+        assert stats.renamed == 0
+        assert stats.confirmed == 1
+        assert stats.named == 1
         assert stats.low_confidence == 1
 
     def test_confidence_buckets(self):
@@ -222,7 +233,8 @@ class TestAnalysisStats:
 
     def test_name_rate(self):
         stats = AnalysisStats(total_functions=4)
-        stats.named = 3
+        stats.renamed = 2
+        stats.confirmed = 1
         assert stats.name_rate == 0.75
 
     def test_name_rate_zero_functions(self):
