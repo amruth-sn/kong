@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import glob as _glob
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -22,7 +24,6 @@ def _java_version(java_home: str) -> int | None:
         )
         # `java -version` prints to stderr, e.g. 'openjdk version "21.0.2"'
         output = result.stderr or result.stdout
-        import re
         match = re.search(r'"(\d+)', output)
         return int(match.group(1)) if match else None
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
@@ -116,7 +117,6 @@ def find_ghidra_install() -> str | None:
 
     # 3. Common paths
     for pattern in ["/opt/ghidra*", "/Applications/ghidra*", "/Applications/Ghidra*"]:
-        import glob as _glob
         for candidate in sorted(_glob.glob(pattern), reverse=True):
             p = Path(candidate)
             if p.is_dir() and (p / "support" / "analyzeHeadless").exists():
