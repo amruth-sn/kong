@@ -28,11 +28,6 @@ from kong.ghidra.types import (
     StructField,
 )
 
-from kong.agent.queue import WorkItem
-from kong.agent.events import EventType, Phase
-from kong.agent.supervisor import Supervisor
-from kong.config import KongConfig, OutputConfig
-
 
 def _field(name: str, dtype: str, offset: int, size: int) -> StructFieldProposal:
     return StructFieldProposal(name=name, data_type=dtype, offset=offset, size=size)
@@ -91,7 +86,7 @@ class TestStructAccumulator:
         assert unified[0].definition.size == 24
         assert len(unified[0].definition.fields) == 2
 
-    def test_same_size_overlapping_offsets_merge(self):
+    def test_same_name_merges_fields(self):
         acc = StructAccumulator()
         acc.add_proposals(0x1000, [
             _proposal("conn_t", 32, [
@@ -100,7 +95,7 @@ class TestStructAccumulator:
             ]),
         ])
         acc.add_proposals(0x2000, [
-            _proposal("connection", 32, [
+            _proposal("conn_t", 32, [
                 _field("socket_fd", "int", 0, 4),
                 _field("port", "uint16_t", 8, 2),
             ]),
@@ -110,7 +105,32 @@ class TestStructAccumulator:
         assert unified[0].definition.size == 32
         assert len(unified[0].definition.fields) == 3
 
-    def test_same_size_no_overlap_stays_separate(self):
+    def test_same_name_different_sizes_merge_to_max(self):
+        """The cJSON scenario: same struct seen partially by different functions."""
+        acc = StructAccumulator()
+        acc.add_proposals(0x1000, [
+            _proposal("cJSON", 24, [
+                _field("type", "int", 0, 4),
+                _field("valueint", "int", 8, 4),
+            ]),
+        ])
+        acc.add_proposals(0x2000, [
+            _proposal("cJSON", 64, [
+                _field("type", "int", 0, 4),
+                _field("valueint", "int", 8, 4),
+                _field("valuedouble", "double", 16, 8),
+                _field("string", "char *", 24, 8),
+                _field("child", "void *", 40, 8),
+                _field("next", "void *", 48, 8),
+            ]),
+        ])
+        unified = acc.unify()
+        assert len(unified) == 1
+        assert unified[0].definition.name == "cJSON"
+        assert unified[0].definition.size == 64
+        assert len(unified[0].definition.fields) == 6
+
+    def test_different_names_stay_separate(self):
         acc = StructAccumulator()
         acc.add_proposals(0x1000, [
             _proposal("type_a", 16, [_field("x", "int", 0, 4)]),
@@ -121,27 +141,16 @@ class TestStructAccumulator:
         unified = acc.unify()
         assert len(unified) == 2
 
-    def test_different_sizes_stay_separate(self):
+    def test_name_used_directly(self):
         acc = StructAccumulator()
         acc.add_proposals(0x1000, [
-            _proposal("small_t", 8, [_field("a", "int", 0, 4)]),
+            _proposal("config_t", 16, [_field("a", "int", 0, 4)]),
         ])
         acc.add_proposals(0x2000, [
-            _proposal("big_t", 64, [_field("b", "int", 0, 4)]),
+            _proposal("config_t", 32, [_field("a", "int", 0, 4), _field("b", "int", 8, 4)]),
         ])
         unified = acc.unify()
-        assert len(unified) == 2
-
-    def test_winning_name_by_majority(self):
-        acc = StructAccumulator()
-        for _ in range(3):
-            acc.add_proposals(0x1000, [
-                _proposal("config_t", 16, [_field("a", "int", 0, 4)]),
-            ])
-        acc.add_proposals(0x2000, [
-            _proposal("cfg", 16, [_field("a", "int", 0, 4)]),
-        ])
-        unified = acc.unify()
+        assert len(unified) == 1
         assert unified[0].definition.name == "config_t"
 
     def test_applications_tracked(self):
@@ -367,6 +376,7 @@ class TestAnalyzerContextTypes:
         )
         client.get_xrefs_from.return_value = []
 
+        from kong.agent.queue import WorkItem
         item = WorkItem(
             function=FunctionInfo(
                 address=0x1000, name="FUN_00001000", size=100,
@@ -409,6 +419,7 @@ class TestAnalyzerContextTypes:
         )
         client.get_xrefs_from.return_value = []
 
+        from kong.agent.queue import WorkItem
         item = WorkItem(
             function=FunctionInfo(
                 address=0x1000, name="f", size=100,
@@ -456,7 +467,7 @@ class TestAnalyzerStructProposalPassthrough:
         )
         client.get_xrefs_from.return_value = []
 
-        
+        from kong.agent.queue import WorkItem
         item = WorkItem(
             function=FunctionInfo(
                 address=0x1000, name="f", size=100,
@@ -514,6 +525,9 @@ class TestStructDefinition:
 
 class TestSupervisorCleanupIntegration:
     def test_cleanup_with_struct_proposals(self, tmp_path):
+        from kong.agent.events import EventType, Phase
+        from kong.agent.supervisor import Supervisor
+        from kong.config import KongConfig, OutputConfig
 
         funcs = [
             FunctionInfo(
@@ -564,6 +578,10 @@ class TestSupervisorCleanupIntegration:
         assert EventType.CLEANUP_TYPE_CREATED in event_types
 
     def test_cleanup_without_struct_proposals(self, tmp_path):
+        from kong.agent.events import EventType
+        from kong.agent.supervisor import Supervisor
+        from kong.config import KongConfig, OutputConfig
+
         funcs = [
             FunctionInfo(
                 address=0x1000, name="f", size=100,
@@ -596,6 +614,10 @@ class TestSupervisorCleanupIntegration:
         assert EventType.CLEANUP_TYPES_UNIFIED not in event_types
 
     def test_cleanup_reanalyzes_low_confidence(self, tmp_path):
+        from kong.agent.events import EventType, Phase
+        from kong.agent.supervisor import Supervisor
+        from kong.config import KongConfig, OutputConfig
+
         funcs = [
             FunctionInfo(
                 address=0x1000, name="FUN_00001000", size=100,
@@ -643,3 +665,77 @@ class TestSupervisorCleanupIntegration:
             if e.type == EventType.FUNCTION_COMPLETE and e.phase == Phase.CLEANUP
         ]
         assert len(cleanup_completes) == 1
+
+    def test_cleanup_retries_failed_signatures(self, tmp_path):
+        """Signatures that fail during Phase 2 (type not yet created) get
+        retried after struct creation in cleanup."""
+        from kong.agent.events import EventType
+        from kong.agent.supervisor import Supervisor
+        from kong.config import KongConfig, OutputConfig
+
+        funcs = [
+            FunctionInfo(
+                address=0x1000, name="cJSON_IsTrue", size=100,
+                classification=FunctionClassification.MEDIUM,
+            ),
+        ]
+        client = MagicMock()
+        client.get_binary_info.return_value = BinaryInfo(
+            arch="x86-64", format="ELF", endianness="little",
+            word_size=8, compiler="GCC", name="cjson_test",
+        )
+        client.list_functions.return_value = funcs
+        client.get_strings.return_value = []
+        client.get_callers.return_value = []
+        client.get_callees.return_value = []
+        client.get_decompilation.return_value = "int f(void *p) { return *(int *)(p + 4); }"
+        client.get_function_info.return_value = funcs[0]
+        client.get_xrefs_from.return_value = []
+        client.list_custom_types.return_value = []
+
+        sig_call_count = 0
+
+        def set_sig_side_effect(addr, sig):
+            nonlocal sig_call_count
+            sig_call_count += 1
+            if sig_call_count == 1:
+                raise Exception("Can't resolve datatype: cJSON *")
+
+        client.set_function_signature.side_effect = set_sig_side_effect
+
+        response = LLMResponse(
+            name="cJSON_IsTrue",
+            signature="int cJSON_IsTrue(cJSON *item)",
+            confidence=95,
+            struct_proposals=[
+                StructProposal(
+                    name="cJSON",
+                    total_size=64,
+                    fields=[
+                        _field("type", "int", 0, 4),
+                        _field("valueint", "int", 4, 4),
+                    ],
+                    used_by_param="param_1",
+                ),
+            ],
+        )
+        llm = MagicMock()
+        llm.analyze_function.return_value = response
+
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+        sup = Supervisor(client, config, llm_client=llm)
+
+        events = []
+        sup.on_event(events.append)
+        sup.run()
+
+        assert sup.results[0x1000].signature == "int cJSON_IsTrue(cJSON *item)"
+        assert sup.results[0x1000].signature_applied is True
+
+        event_types = [e.type for e in events]
+        assert EventType.CLEANUP_SIGNATURES_RETRIED in event_types
+
+        retry_event = next(
+            e for e in events if e.type == EventType.CLEANUP_SIGNATURES_RETRIED
+        )
+        assert retry_event.data["succeeded"] == 1

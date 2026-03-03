@@ -122,6 +122,28 @@ class TestAnalyzerAnalyze:
 
         assert result.name == "bad_name!@#"
 
+    def test_signature_applied_tracks_success(self):
+        response = LLMResponse(name="f", signature="void f(int x)")
+        llm = _mock_llm(response)
+        client = _mock_client()
+
+        analyzer = Analyzer(client, llm)
+        result = analyzer.analyze(_item(), _binary_info(), {}, [])
+
+        assert result.signature_applied is True
+
+    def test_signature_applied_tracks_failure(self):
+        response = LLMResponse(name="f", signature="void f(cJSON *item)")
+        llm = _mock_llm(response)
+        client = _mock_client()
+        client.set_function_signature.side_effect = Exception("Can't resolve datatype")
+
+        analyzer = Analyzer(client, llm)
+        result = analyzer.analyze(_item(), _binary_info(), {}, [])
+
+        assert result.signature_applied is False
+        assert result.signature == "void f(cJSON *item)"
+
 
 class TestAnalyzerContext:
     def test_includes_decompilation(self):
