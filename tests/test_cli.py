@@ -43,7 +43,7 @@ def test_analyze_no_ghidra_installed(tmp_path):
     binary.write_bytes(b"\x00" * 16)
 
     runner = CliRunner()
-    with patch("kong.ghidra.environment.find_ghidra_install", return_value=None):
+    with patch("kong.config.find_ghidra_install", return_value=None):
         result = runner.invoke(cli, ["analyze", str(binary)])
 
     assert result.exit_code != 0

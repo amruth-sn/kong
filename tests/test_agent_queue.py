@@ -1,5 +1,7 @@
 """Tests for the work queue with call-graph ordering."""
 
+from __future__ import annotations
+
 from kong.agent.queue import WorkItem, WorkQueue
 from kong.ghidra.types import FunctionClassification, FunctionInfo
 

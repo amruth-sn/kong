@@ -1,8 +1,10 @@
 """Tests for the supervisor agent loop."""
 
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
 
-from kong.agent.events import Event, EventType, Phase
+from unittest.mock import MagicMock
+
+from kong.agent.events import EventType, Phase
 from kong.agent.models import FunctionResult
 from kong.agent.supervisor import AnalysisStats, Supervisor
 from kong.config import KongConfig, OutputConfig
