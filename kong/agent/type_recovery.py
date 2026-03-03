@@ -147,7 +147,7 @@ class StructAccumulator:
                 size=best.size,
             ))
 
-        max_size = max(p.total_size for p in group)
+        max_size = max((p.total_size for p in group if p.total_size is not None), default=0)
         last_field_end = max(
             (f.offset + f.size for f in merged_fields),
             default=0,
