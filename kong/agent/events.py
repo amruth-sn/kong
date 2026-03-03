@@ -31,6 +31,9 @@ class EventType(Enum):
     LLM_CALL_START = "llm_call_start"
     LLM_CALL_COMPLETE = "llm_call_complete"
 
+    CLEANUP_TYPES_UNIFIED = "cleanup_types_unified"
+    CLEANUP_TYPE_CREATED = "cleanup_type_created"
+
     EXPORT_FILE = "export_file"
 
     RUN_START = "run_start"
