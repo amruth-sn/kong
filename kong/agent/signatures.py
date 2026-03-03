@@ -11,6 +11,10 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from kong.ghidra.types import FunctionInfo
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +28,7 @@ class SignatureEntry:
     description: str = ""
     signature: str = ""
     category: str = ""  # e.g., "stdlib", "crypto"
-    indicators: dict = field(default_factory=dict)
+    indicators: dict[str, str | list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -108,7 +112,7 @@ class SignatureDB:
 
     def match_functions(
         self,
-        functions: list,  # list[FunctionInfo]
+        functions: list[FunctionInfo],
     ) -> list[SignatureMatch]:
         """Match a list of functions against the signature database.
 

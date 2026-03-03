@@ -9,10 +9,13 @@ from rich.console import Console
 from rich.markup import escape
 
 from kong import __version__
-from kong.config import GhidraConfig, KongConfig, OutputConfig
-
-from kong.ghidra.client import GhidraClient, GhidraClientError
 from collections import Counter
+
+from kong.agent.events import Event, EventType
+from kong.agent.supervisor import Supervisor
+from kong.config import GhidraConfig, KongConfig, OutputConfig
+from kong.ghidra.client import GhidraClient, GhidraClientError
+from kong.llm.client import AnthropicClient
 console = Console()
 
 
@@ -94,22 +97,45 @@ def analyze(
         console.print(f"[red]Failed to open binary:[/red] {escape(str(e))}")
         raise SystemExit(1)
 
-    # Get binary info
     info = client.get_binary_info()
     console.print(f"[green]Loaded.[/green] {info.arch} {info.format} ({info.compiler})")
 
-    # Enumerate functions
-    functions = client.list_functions()
-    thunks = sum(1 for f in functions if f.is_thunk)
-    console.print(
-        f"Functions: {len(functions)} total, {thunks} thunks, "
-        f"{len(functions) - thunks} to analyze"
-    )
+    llm_client = AnthropicClient(api_key="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")
 
-    # TODO: agent loop
-    console.print("\n[yellow]done")
+    def print_event(event: Event) -> None:
+        style = {
+            EventType.PHASE_START: "bold cyan",
+            EventType.PHASE_COMPLETE: "bold green",
+            EventType.FUNCTION_COMPLETE: "green",
+            EventType.FUNCTION_SKIPPED: "dim",
+            EventType.FUNCTION_ERROR: "red",
+            EventType.RUN_ERROR: "bold red",
+            EventType.RUN_COMPLETE: "bold green",
+        }.get(event.type, "")
+        if style:
+            console.print(f"[{style}]{escape(event.message)}[/{style}]")
+        else:
+            console.print(escape(event.message))
 
-    client.close()
+    supervisor = Supervisor(client, config, llm_client=llm_client)
+    supervisor.on_event(print_event)
+
+    try:
+        supervisor.run()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted.[/yellow]")
+    finally:
+        stats = supervisor.stats
+        console.print()
+        console.print(f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named")
+        console.print(
+            f"[bold]Confidence:[/bold] {stats.high_confidence} high, "
+            f"{stats.medium_confidence} med, {stats.low_confidence} low"
+        )
+        console.print(f"[bold]LLM calls:[/bold] {stats.llm_calls}")
+        console.print(f"[bold]Cost:[/bold] ${llm_client.total_cost_usd:.4f}")
+        console.print(f"[bold]Duration:[/bold] {stats.duration_seconds:.1f}s")
+        client.close()
 
 
 @cli.command()
