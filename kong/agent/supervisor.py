@@ -15,6 +15,7 @@ from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem, WorkQueue
 from kong.agent.signatures import SignatureDB
 from kong.agent.triage import TriageAgent, TriageResult
+from kong.agent.type_recovery import StructAccumulator, apply_unified_structs
 from kong.config import KongConfig
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
@@ -93,6 +94,7 @@ class Supervisor:
         self.binary_info: BinaryInfo | None = None
         self.functions: list[FunctionInfo] = []
         self.strings: list[StringEntry] = []
+        self.struct_accumulator = StructAccumulator()
         self._listeners: list[EventCallback] = []
         self._paused: bool = False
 
@@ -261,6 +263,9 @@ class Supervisor:
             self.results[func.address] = result
             self.stats.record_result(result)
 
+            if result.struct_proposals:
+                self.struct_accumulator.add_proposals(func.address, result.struct_proposals)
+
             if not result.error and not result.skipped:
                 self._emit(Event(
                     type=EventType.FUNCTION_COMPLETE,
@@ -316,24 +321,135 @@ class Supervisor:
         )
 
     def _run_cleanup(self) -> None:
-        """Re-analyze low-confidence functions with accumulated context."""
+        """Unify struct types, apply to Ghidra, re-analyze affected and low-confidence functions."""
         self._emit(Event(
             type=EventType.PHASE_START,
             phase=Phase.CLEANUP,
             message="Starting cleanup pass...",
         ))
 
+        structs_created = 0
+        retyped_addrs: list[int] = []
+
+        if self.struct_accumulator.proposal_count > 0:
+            unified = self.struct_accumulator.unify()
+            self._emit(Event(
+                type=EventType.CLEANUP_TYPES_UNIFIED,
+                phase=Phase.CLEANUP,
+                message=(
+                    f"Unified {self.struct_accumulator.proposal_count} struct proposals "
+                    f"into {len(unified)} types."
+                ),
+                data={
+                    "proposals": self.struct_accumulator.proposal_count,
+                    "unified": len(unified),
+                },
+            ))
+
+            retyped_addrs = apply_unified_structs(self.client, unified)
+            structs_created = len(unified)
+
+            for us in unified:
+                self._emit(Event(
+                    type=EventType.CLEANUP_TYPE_CREATED,
+                    phase=Phase.CLEANUP,
+                    message=(
+                        f"Created struct '{us.definition.name}' "
+                        f"({us.definition.size} bytes, {us.definition.field_count} fields)"
+                    ),
+                    data={
+                        "name": us.definition.name,
+                        "size": us.definition.size,
+                        "fields": us.definition.field_count,
+                    },
+                ))
+
         low_confidence = [
             r for r in self.results.values()
             if not r.skipped and not r.error and r.confidence < 50
         ]
+        low_conf_addrs = {r.address for r in low_confidence}
 
-        # TODO: Re-analyze with full context
+        reanalyze_addrs = sorted(set(retyped_addrs) | low_conf_addrs)
+        reanalyzed = 0
+
+        if reanalyze_addrs and self.llm_client is not None:
+            known_types = self.client.list_custom_types()
+            analyzer = Analyzer(self.client, self.llm_client)
+
+            for addr in reanalyze_addrs:
+                if self._paused:
+                    continue
+
+                old_result = self.results.get(addr)
+                func_name = old_result.original_name if old_result else f"FUN_{addr:08x}"
+
+                self._emit(Event(
+                    type=EventType.FUNCTION_START,
+                    phase=Phase.CLEANUP,
+                    message=f"Re-analyzing {func_name} (0x{addr:08x})...",
+                    data={"address": addr, "name": func_name},
+                ))
+
+                func_info = self._find_function(addr)
+                if func_info is None:
+                    continue
+
+                item = WorkItem(
+                    function=func_info,
+                    callers=self.triage_result.call_graph.callers.get(addr, []) if self.triage_result else [],
+                    callees=self.triage_result.call_graph.callees.get(addr, []) if self.triage_result else [],
+                )
+
+                try:
+                    new_result = analyzer.analyze(
+                        item,
+                        binary_info=self.binary_info,
+                        known_results=self.results,
+                        strings=self.strings,
+                        known_types=known_types,
+                    )
+                except Exception as e:
+                    self._emit(Event(
+                        type=EventType.FUNCTION_ERROR,
+                        phase=Phase.CLEANUP,
+                        message=f"Error re-analyzing {func_name}: {e}",
+                        data={"address": addr, "error": str(e)},
+                    ))
+                    continue
+
+                if new_result.confidence > (old_result.confidence if old_result else 0):
+                    self.results[addr] = new_result
+                    reanalyzed += 1
+
+                    self._emit(Event(
+                        type=EventType.FUNCTION_COMPLETE,
+                        phase=Phase.CLEANUP,
+                        message=(
+                            f"0x{addr:08x} → {new_result.name} "
+                            f"(confidence: {new_result.confidence}%, "
+                            f"was {old_result.confidence if old_result else 0}%)"
+                        ),
+                        data={
+                            "address": addr,
+                            "name": new_result.name,
+                            "confidence": new_result.confidence,
+                            "previous_confidence": old_result.confidence if old_result else 0,
+                        },
+                    ))
+
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,
             phase=Phase.CLEANUP,
-            message=f"Cleanup complete. {len(low_confidence)} functions re-examined.",
-            data={"re_examined": len(low_confidence)},
+            message=(
+                f"Cleanup complete. {structs_created} structs created, "
+                f"{reanalyzed}/{len(reanalyze_addrs)} functions improved."
+            ),
+            data={
+                "structs_created": structs_created,
+                "reanalyze_candidates": len(reanalyze_addrs),
+                "reanalyzed": reanalyzed,
+            },
         ))
 
     def _run_export(self) -> None:
@@ -355,6 +471,13 @@ class Supervisor:
             data={"output_dir": str(output_dir)},
         ))
 
+
+    def _find_function(self, addr: int) -> FunctionInfo | None:
+        """Look up a FunctionInfo by address from the triage function list."""
+        for f in self.functions:
+            if f.address == addr:
+                return f
+        return None
 
     def _stats_dict(self) -> dict[str, int | float]:
         s = self.stats

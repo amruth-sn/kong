@@ -15,7 +15,7 @@ from typing import Protocol
 from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem
 from kong.ghidra.client import GhidraClient
-from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
+from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry, StructDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ class LLMResponse:
     comments: str = ""
     reasoning: str = ""
     variables: list[VariableRename] = field(default_factory=list)
+    struct_proposals: list[StructProposal] = field(default_factory=list)
     raw: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
@@ -51,6 +52,24 @@ class VariableRename:
 
 
 @dataclass
+class StructFieldProposal:
+    name: str
+    data_type: str
+    offset: int
+    size: int
+
+
+@dataclass
+class StructProposal:
+    """A struct layout proposed by the LLM based on offset-based memory accesses."""
+    name: str
+    total_size: int
+    fields: list[StructFieldProposal] = field(default_factory=list)
+    used_by_param: str = ""
+    source_function: int = 0
+
+
+@dataclass
 class AnalysisContext:
     """All context assembled for analyzing a single function."""
     function: FunctionInfo
@@ -60,6 +79,7 @@ class AnalysisContext:
     callee_snippets: list[CalleeSnippet] = field(default_factory=list)
     referenced_strings: list[str] = field(default_factory=list)
     known_functions: dict[int, str] = field(default_factory=dict)
+    known_types: list[StructDefinition] = field(default_factory=list)
 
 
 @dataclass
@@ -98,17 +118,15 @@ class Analyzer:
         binary_info: BinaryInfo,
         known_results: dict[int, FunctionResult],
         strings: list[StringEntry],
+        known_types: list[StructDefinition] | None = None,
     ) -> FunctionResult:
         """Full analysis pipeline for one function."""
         func = item.function
 
-        context = self._build_context(item, binary_info, known_results, strings)
+        context = self._build_context(item, binary_info, known_results, strings, known_types)
         prompt = self._build_prompt(context)
 
         response = self.llm.analyze_function(prompt)
-        # TODO: validation?
-        # TODO: error handling?
-        # TODO: track token usage?
 
         self._write_back(func.address, response)
 
@@ -122,6 +140,7 @@ class Analyzer:
             comments=response.comments,
             reasoning=response.reasoning,
             llm_calls=1,
+            struct_proposals=response.struct_proposals,
         )
 
     def _build_context(
@@ -130,6 +149,7 @@ class Analyzer:
         binary_info: BinaryInfo,
         known_results: dict[int, FunctionResult],
         strings: list[StringEntry],
+        known_types: list[StructDefinition] | None = None,
     ) -> AnalysisContext:
         """Assemble all context the LLM needs to analyze this function."""
         func = item.function
@@ -155,6 +175,7 @@ class Analyzer:
             callee_snippets=callee_snippets,
             referenced_strings=func_strings,
             known_functions=known_map,
+            known_types=known_types or [],
         )
 
     def _get_caller_snippets(
@@ -277,6 +298,20 @@ class Analyzer:
             for addr, name in sorted(context.known_functions.items()):
                 parts.append(f"- 0x{addr:08x}: {name}")
 
+        if context.known_types:
+            parts.append("")
+            parts.append("### Known Struct Types")
+            parts.append(
+                "These structs have been recovered from the binary. "
+                "Use them in your signature if the function's parameters match."
+            )
+            for sd in context.known_types:
+                parts.append(f"\n```c\nstruct {sd.name} {{ // {sd.size} bytes")
+                for f in sd.fields:
+                    parts.append(f"    {f.data_type} {f.name}; // offset 0x{f.offset:x}, {f.size} bytes")
+                parts.append("};")
+                parts.append("```")
+
         return "\n".join(parts)
 
     def _write_back(self, addr: int, response: LLMResponse) -> None:
@@ -331,6 +366,26 @@ class Analyzer:
             if "old_name" in v and "new_name" in v
         ]
 
+        struct_proposals = []
+        for sp in data.get("struct_proposals", []):
+            if "name" not in sp or "total_size" not in sp:
+                continue
+            fields = [
+                StructFieldProposal(
+                    name=f.get("name", f"field_{i}"),
+                    data_type=f.get("data_type", "undefined"),
+                    offset=f.get("offset", 0),
+                    size=f.get("size", 4),
+                )
+                for i, f in enumerate(sp.get("fields", []))
+            ]
+            struct_proposals.append(StructProposal(
+                name=sp["name"],
+                total_size=sp["total_size"],
+                fields=fields,
+                used_by_param=sp.get("used_by_param", ""),
+            ))
+
         return LLMResponse(
             name=data.get("name", ""),
             signature=data.get("signature", ""),
@@ -339,5 +394,6 @@ class Analyzer:
             comments=data.get("comments", ""),
             reasoning=data.get("reasoning", ""),
             variables=variables,
+            struct_proposals=struct_proposals,
             raw=raw,
         )
