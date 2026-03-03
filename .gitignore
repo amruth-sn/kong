@@ -217,9 +217,4 @@ __marimo__/
 .plist
 
 #internal testing
-test_arm64_stripped_ghidra/
-test_arm64_symbols_ghidra/
-test_arm64_symbols.dSYM/
-test_arm64_stripped
-test_arm64_symbols
-test_program.c
+internal_testing/
