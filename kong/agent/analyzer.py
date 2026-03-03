@@ -21,12 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient(Protocol):
-    """Protocol for LLM interaction.
-
-    TODO: add concrete implementation that uses Anthropic SDK.
-    """
+    """Protocol for LLM interaction."""
 
     def analyze_function(self, prompt: str) -> LLMResponse: ...
+
+    def analyze_with_tools(
+        self,
+        prompt: str,
+        system: str,
+        tools: list[dict[str, object]],
+        tool_executor: object,
+        max_rounds: int = 10,
+    ) -> LLMResponse: ...
 
 
 @dataclass
@@ -99,7 +105,8 @@ class CalleeSnippet:
 class Analyzer:
     """Analyzes a single function: gather context → LLM → parse → write back.
 
-    Usage:
+    Usage::
+
         analyzer = Analyzer(ghidra_client, llm_client)
         result = analyzer.analyze(work_item, binary_info, known_results, strings)
     """
@@ -108,9 +115,11 @@ class Analyzer:
         self,
         client: GhidraClient,
         llm_client: LLMClient,
+        deobfuscator: object | None = None,
     ) -> None:
         self.client = client
         self.llm = llm_client
+        self._deobfuscator = deobfuscator
 
     def analyze(
         self,
@@ -121,14 +130,35 @@ class Analyzer:
         known_types: list[StructDefinition] | None = None,
     ) -> FunctionResult:
         """Full analysis pipeline for one function."""
+        from kong.agent.deobfuscator import Deobfuscator, classify_obfuscation
+
         func = item.function
-
         context = self._build_context(item, binary_info, known_results, strings, known_types)
+
+        techniques = classify_obfuscation(context.decompilation) if self._deobfuscator else []
+
+        if techniques and isinstance(self._deobfuscator, Deobfuscator):
+            response, tool_calls = self._deobfuscator.deobfuscate(context, techniques)
+            sig_applied = self._write_back(func.address, response)
+            return FunctionResult(
+                address=func.address,
+                original_name=func.name,
+                name=response.name,
+                signature=response.signature,
+                confidence=response.confidence,
+                classification=response.classification,
+                comments=response.comments,
+                reasoning=response.reasoning,
+                llm_calls=1,
+                signature_applied=sig_applied,
+                struct_proposals=response.struct_proposals,
+                obfuscation_techniques=[t.value for t in techniques],
+                deobfuscation_tool_calls=tool_calls,
+            )
+
         prompt = self._build_prompt(context)
-
         response = self.llm.analyze_function(prompt)
-
-        self._write_back(func.address, response)
+        sig_applied = self._write_back(func.address, response)
 
         return FunctionResult(
             address=func.address,
@@ -140,6 +170,7 @@ class Analyzer:
             comments=response.comments,
             reasoning=response.reasoning,
             llm_calls=1,
+            signature_applied=sig_applied,
             struct_proposals=response.struct_proposals,
         )
 
@@ -314,25 +345,34 @@ class Analyzer:
 
         return "\n".join(parts)
 
-    def _write_back(self, addr: int, response: LLMResponse) -> None:
-        """Write analysis results back to Ghidra."""
+    def _write_back(self, addr: int, response: LLMResponse) -> bool:
+        """Write analysis results back to Ghidra.
+
+        Returns True if the signature was successfully applied (or no
+        signature was provided), False if it failed (typically because the
+        signature references a type that doesn't exist yet).
+        """
         if response.name:
             try:
                 self.client.rename_function(addr, response.name)
             except Exception as e:
                 logger.warning("Failed to rename 0x%08x to %s: %s", addr, response.name, e)
 
+        signature_ok = True
         if response.signature:
             try:
                 self.client.set_function_signature(addr, response.signature)
             except Exception as e:
                 logger.warning("Failed to set signature at 0x%08x: %s", addr, e)
+                signature_ok = False
 
         if response.comments:
             try:
                 self.client.add_comment(addr, response.comments)
             except Exception as e:
                 logger.warning("Failed to add comment at 0x%08x: %s", addr, e)
+
+        return signature_ok
 
     @staticmethod
     def parse_llm_json(raw: str) -> LLMResponse:

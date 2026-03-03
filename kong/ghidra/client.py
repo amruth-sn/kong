@@ -13,11 +13,18 @@ from typing import Any
 import pyghidra
 
 from kong.ghidra.types import (
+    BasicBlock,
     BinaryInfo,
+    BlockEdge,
+    BlockEdgeType,
+    ControlFlowGraph,
     FunctionClassification,
     FunctionInfo,
     ParameterInfo,
+    PcodeOp,
     StringEntry,
+    StructDefinition,
+    StructField,
     VariableInfo,
     XRef,
 )
@@ -343,6 +350,340 @@ class GhidraClient:
         finally:
             self.program.endTransaction(tx, True)
         logger.info("Added %s comment at 0x%08x", comment_type, addr)
+
+    # ------------------------------------------------------------------
+    # Type management methods
+    # ------------------------------------------------------------------
+
+    def create_struct(self, definition: StructDefinition) -> None:
+        """Create a struct data type in Ghidra's DataTypeManager.
+
+        Fields are placed at explicit offsets within the struct. Gaps between
+        fields are left as undefined bytes (Ghidra fills them automatically).
+        """
+        from ghidra.program.model.data import (
+            CategoryPath,
+            StructureDataType,
+        )
+
+        dtm = self.program.getDataTypeManager()
+        category = CategoryPath("/kong")
+
+        struct_dt = StructureDataType(category, definition.name, definition.size)
+        for fld in definition.fields:
+            ghidra_type = self._resolve_data_type(fld.data_type, fld.size)
+            struct_dt.replaceAtOffset(fld.offset, ghidra_type, fld.size, fld.name, None)
+
+        tx = self.program.startTransaction("create_struct")
+        try:
+            dtm.addDataType(struct_dt, None)
+        finally:
+            self.program.endTransaction(tx, True)
+        logger.info("Created struct '%s' (%d bytes, %d fields)", definition.name, definition.size, definition.field_count)
+
+    def apply_type_to_param(
+        self,
+        func_addr: int,
+        param_ordinal: int,
+        type_name: str,
+        as_pointer: bool = True,
+    ) -> None:
+        """Apply a data type (optionally as a pointer) to a function parameter."""
+        from ghidra.program.model.data import PointerDataType
+        from ghidra.program.model.symbol import SourceType
+
+        func = self._get_function_at(func_addr)
+        params = func.getParameters()
+        if param_ordinal >= len(params):
+            raise GhidraClientError(
+                f"Parameter ordinal {param_ordinal} out of range for "
+                f"function at 0x{func_addr:08x} ({len(params)} params)"
+            )
+
+        resolved = self._lookup_type(type_name)
+        if resolved is None:
+            raise GhidraClientError(f"Type '{type_name}' not found in DataTypeManager")
+
+        target_type = PointerDataType(resolved) if as_pointer else resolved
+
+        tx = self.program.startTransaction("apply_type_to_param")
+        try:
+            param = params[param_ordinal]
+            param.setDataType(target_type, SourceType.USER_DEFINED)
+        finally:
+            self.program.endTransaction(tx, True)
+        logger.info(
+            "Applied type '%s%s' to param %d of function at 0x%08x",
+            type_name, " *" if as_pointer else "", param_ordinal, func_addr,
+        )
+
+    def list_custom_types(self) -> list[StructDefinition]:
+        """List all struct types in the /kong category."""
+        from ghidra.program.model.data import CategoryPath, Structure
+
+        dtm = self.program.getDataTypeManager()
+        category = dtm.getCategory(CategoryPath("/kong"))
+        if category is None:
+            return []
+
+        results: list[StructDefinition] = []
+        for dt in category.getDataTypes():
+            if not isinstance(dt, Structure):
+                continue
+            fields = []
+            for i in range(dt.getNumDefinedComponents()):
+                comp = dt.getComponent(i)
+                fields.append(StructField(
+                    name=str(comp.getFieldName() or f"field_{i}"),
+                    data_type=str(comp.getDataType().getDisplayName()),
+                    offset=int(comp.getOffset()),
+                    size=int(comp.getLength()),
+                ))
+            results.append(StructDefinition(
+                name=str(dt.getName()),
+                size=int(dt.getLength()),
+                fields=fields,
+            ))
+        return results
+
+    def get_type(self, name: str) -> StructDefinition | None:
+        """Look up a struct type by name from the /kong category."""
+        from ghidra.program.model.data import Structure
+
+        resolved = self._lookup_type(name)
+        if resolved is None or not isinstance(resolved, Structure):
+            return None
+
+        fields = []
+        for i in range(resolved.getNumDefinedComponents()):
+            comp = resolved.getComponent(i)
+            fields.append(StructField(
+                name=str(comp.getFieldName() or f"field_{i}"),
+                data_type=str(comp.getDataType().getDisplayName()),
+                offset=int(comp.getOffset()),
+                size=int(comp.getLength()),
+            ))
+        return StructDefinition(
+            name=str(resolved.getName()),
+            size=int(resolved.getLength()),
+            fields=fields,
+        )
+
+    def _lookup_type(self, name: str) -> Any:
+        """Search for a data type by name, checking /kong category first."""
+        from ghidra.program.model.data import CategoryPath
+        from java.util import ArrayList
+
+        dtm = self.program.getDataTypeManager()
+        category = dtm.getCategory(CategoryPath("/kong"))
+        if category is not None:
+            for dt in category.getDataTypes():
+                if str(dt.getName()) == name:
+                    return dt
+
+        results = ArrayList()
+        dtm.findDataTypes(name, results)
+        return results.get(0) if results.size() > 0 else None
+
+    def _resolve_data_type(self, type_name: str, size: int) -> Any:
+        """Resolve a C type name to a Ghidra DataType, falling back to sized defaults."""
+        from ghidra.program.model.data import (
+            ByteDataType,
+            CharDataType,
+            IntegerDataType,
+            LongDataType,
+            LongLongDataType,
+            PointerDataType,
+            ShortDataType,
+            UnsignedIntegerDataType,
+            UnsignedLongDataType,
+            UnsignedLongLongDataType,
+            UnsignedShortDataType,
+            Undefined1DataType,
+            Undefined2DataType,
+            Undefined4DataType,
+            Undefined8DataType,
+        )
+
+        _BUILTIN: dict[str, Any] = {
+            "byte": ByteDataType.dataType,
+            "char": CharDataType.dataType,
+            "short": ShortDataType.dataType,
+            "int": IntegerDataType.dataType,
+            "long": LongDataType.dataType,
+            "long long": LongLongDataType.dataType,
+            "uint8_t": ByteDataType.dataType,
+            "uint16_t": UnsignedShortDataType.dataType,
+            "uint32_t": UnsignedIntegerDataType.dataType,
+            "uint64_t": UnsignedLongLongDataType.dataType,
+            "int8_t": CharDataType.dataType,
+            "int16_t": ShortDataType.dataType,
+            "int32_t": IntegerDataType.dataType,
+            "int64_t": LongLongDataType.dataType,
+            "unsigned int": UnsignedIntegerDataType.dataType,
+            "unsigned long": UnsignedLongDataType.dataType,
+            "unsigned short": UnsignedShortDataType.dataType,
+        }
+
+        if type_name.endswith("*"):
+            base_name = type_name.rstrip("* ").strip()
+            base_type = self._resolve_data_type(base_name, self.program.getDefaultPointerSize())
+            return PointerDataType(base_type)
+
+        low = type_name.lower().strip()
+        if low in _BUILTIN:
+            return _BUILTIN[low]
+
+        found = self._lookup_type(type_name)
+        if found is not None:
+            return found
+
+        _SIZED_DEFAULTS: dict[int, Any] = {
+            1: Undefined1DataType.dataType,
+            2: Undefined2DataType.dataType,
+            4: Undefined4DataType.dataType,
+            8: Undefined8DataType.dataType,
+        }
+        return _SIZED_DEFAULTS.get(size, Undefined4DataType.dataType)
+
+    # ------------------------------------------------------------------
+    # Control flow graph methods
+    # ------------------------------------------------------------------
+
+    def get_basic_blocks(self, addr: int) -> list[BasicBlock]:
+        """Get basic blocks for the function at addr."""
+        from ghidra.program.model.block import SimpleBlockModel
+        from ghidra.util.task import ConsoleTaskMonitor
+
+        func = self._get_function_at(addr)
+        body = func.getBody()
+        model = SimpleBlockModel(self.program)
+        monitor = ConsoleTaskMonitor()
+
+        blocks: list[BasicBlock] = []
+        block_iter = model.getCodeBlocksContaining(body, monitor)
+        while block_iter.hasNext():
+            block = block_iter.next()
+            start = int(block.getFirstStartAddress().getOffset())
+            end = int(block.getMaxAddress().getOffset())
+            instructions = self._disassemble_range(start, end)
+            blocks.append(BasicBlock(
+                start_addr=start,
+                end_addr=end,
+                instructions=instructions,
+            ))
+        return blocks
+
+    def get_control_flow_graph(self, addr: int) -> ControlFlowGraph:
+        """Build a complete control flow graph for the function at addr."""
+        from ghidra.program.model.block import SimpleBlockModel
+        from ghidra.util.task import ConsoleTaskMonitor
+
+        func = self._get_function_at(addr)
+        body = func.getBody()
+        model = SimpleBlockModel(self.program)
+        monitor = ConsoleTaskMonitor()
+
+        blocks: list[BasicBlock] = []
+        edges: list[BlockEdge] = []
+        block_iter = model.getCodeBlocksContaining(body, monitor)
+        while block_iter.hasNext():
+            block = block_iter.next()
+            start = int(block.getFirstStartAddress().getOffset())
+            end = int(block.getMaxAddress().getOffset())
+            instructions = self._disassemble_range(start, end)
+            blocks.append(BasicBlock(
+                start_addr=start,
+                end_addr=end,
+                instructions=instructions,
+            ))
+
+            dest_iter = block.getDestinations(monitor)
+            while dest_iter.hasNext():
+                dest_ref = dest_iter.next()
+                dest_block = dest_ref.getDestinationBlock()
+                if dest_block is None:
+                    continue
+                dest_addr = int(dest_block.getFirstStartAddress().getOffset())
+                if not body.contains(dest_block.getFirstStartAddress()):
+                    continue
+                flow_type = dest_ref.getFlowType()
+                edge_type = self._classify_flow(flow_type)
+                edges.append(BlockEdge(
+                    from_addr=start,
+                    to_addr=dest_addr,
+                    edge_type=edge_type,
+                ))
+
+        return ControlFlowGraph(
+            function_addr=int(func.getEntryPoint().getOffset()),
+            blocks=blocks,
+            edges=edges,
+        )
+
+    def get_pcode_ops(self, addr: int) -> list[PcodeOp]:
+        """Get high-level pcode operations for the function at addr."""
+        from ghidra.app.decompiler import DecompInterface
+        from ghidra.util.task import ConsoleTaskMonitor
+
+        func = self._get_function_at(addr)
+        di = DecompInterface()
+        try:
+            di.openProgram(self.program)
+            result = di.decompileFunction(func, 30, ConsoleTaskMonitor())
+            if not result.decompileCompleted():
+                raise GhidraClientError(
+                    f"Decompilation failed for pcode at 0x{addr:08x}"
+                )
+            high_func = result.getHighFunction()
+            if high_func is None:
+                return []
+
+            ops: list[PcodeOp] = []
+            op_iter = high_func.getPcodeOps()
+            while op_iter.hasNext():
+                op = op_iter.next()
+                mnemonic = str(op.getMnemonic())
+                op_addr = int(op.getSeqnum().getTarget().getOffset())
+                inputs = [
+                    str(op.getInput(i)) for i in range(op.getNumInputs())
+                ]
+                output = str(op.getOutput()) if op.getOutput() is not None else ""
+                ops.append(PcodeOp(
+                    mnemonic=mnemonic,
+                    address=op_addr,
+                    inputs=inputs,
+                    output=output,
+                ))
+            return ops
+        finally:
+            di.dispose()
+
+    def _disassemble_range(self, start: int, end: int) -> list[str]:
+        """Get disassembly text for instructions in an address range."""
+        listing = self.program.getListing()
+        start_addr = self._to_addr(start)
+        end_addr = self._to_addr(end)
+        instructions: list[str] = []
+        instr = listing.getInstructionAt(start_addr)
+        while instr is not None and instr.getAddress().compareTo(end_addr) <= 0:
+            instructions.append(str(instr))
+            instr = instr.getNext()
+        return instructions
+
+    @staticmethod
+    def _classify_flow(flow_type: object) -> BlockEdgeType:
+        """Map a Ghidra FlowType to our BlockEdgeType enum."""
+        name = str(flow_type)
+        if "FALL_THROUGH" in name:
+            return BlockEdgeType.FALL_THROUGH
+        if "UNCONDITIONAL_JUMP" in name or "CONDITIONAL_JUMP" in name:
+            return BlockEdgeType.BRANCH
+        if "CALL" in name:
+            return BlockEdgeType.CALL
+        if "COMPUTED" in name or "INDIRECT" in name:
+            return BlockEdgeType.COMPUTED
+        return BlockEdgeType.UNKNOWN
 
     # ------------------------------------------------------------------
     # Helpers

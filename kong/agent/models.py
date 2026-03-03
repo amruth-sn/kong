@@ -24,4 +24,7 @@ class FunctionResult:
     llm_calls: int = 0
     skipped: bool = False
     skip_reason: str = ""
+    signature_applied: bool = False
     struct_proposals: list[StructProposal] = field(default_factory=list)
+    obfuscation_techniques: list[str] = field(default_factory=list)
+    deobfuscation_tool_calls: int = 0

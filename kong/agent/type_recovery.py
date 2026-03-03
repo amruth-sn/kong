@@ -81,14 +81,13 @@ class StructAccumulator:
         return [self._merge_group(g) for g in groups]
 
     def _group_proposals(self) -> list[list[StructProposal]]:
-        by_size: dict[int, list[StructProposal]] = defaultdict(list)
+        by_name: dict[str, list[StructProposal]] = defaultdict(list)
         for p in self._proposals:
-            by_size[p.total_size].append(p)
+            by_name[p.name].append(p)
 
         groups: list[list[StructProposal]] = []
-        for same_size in by_size.values():
-            sub = self._split_by_field_overlap(same_size)
-            groups.extend(sub)
+        for same_name in by_name.values():
+            groups.append(same_name)
         return groups
 
     @staticmethod
@@ -148,7 +147,12 @@ class StructAccumulator:
                 size=best.size,
             ))
 
-        total_size = group[0].total_size
+        max_size = max(p.total_size for p in group)
+        last_field_end = max(
+            (f.offset + f.size for f in merged_fields),
+            default=0,
+        )
+        total_size = max(max_size, last_field_end)
         definition = StructDefinition(
             name=winning_name,
             size=total_size,

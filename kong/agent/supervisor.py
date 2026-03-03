@@ -6,10 +6,12 @@ Emits structured events for TUI/CLI consumption.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 
 from kong.agent.analyzer import Analyzer, LLMClient
+from kong.agent.deobfuscator import Deobfuscator
 from kong.agent.events import Event, EventCallback, EventType, Phase
 from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem, WorkQueue
@@ -19,6 +21,8 @@ from kong.agent.type_recovery import StructAccumulator, apply_unified_structs
 from kong.config import KongConfig
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -312,13 +316,31 @@ class Supervisor:
                 confidence=0,
             )
 
-        analyzer = Analyzer(self.client, self.llm_client)
-        return analyzer.analyze(
+        deobfuscator = Deobfuscator(self.client, self.llm_client)
+        analyzer = Analyzer(self.client, self.llm_client, deobfuscator=deobfuscator)
+        result = analyzer.analyze(
             item,
             binary_info=self.binary_info,
             known_results=self.results,
             strings=self.strings,
         )
+
+        if result.obfuscation_techniques:
+            self._emit(Event(
+                type=EventType.DEOBFUSCATION_DETECTED,
+                phase=Phase.ANALYSIS,
+                message=(
+                    f"Obfuscation detected in {func.name}: "
+                    f"{', '.join(result.obfuscation_techniques)}"
+                ),
+                data={
+                    "address": func.address,
+                    "techniques": result.obfuscation_techniques,
+                    "tool_calls": result.deobfuscation_tool_calls,
+                },
+            ))
+
+        return result
 
     def _run_cleanup(self) -> None:
         """Unify struct types, apply to Ghidra, re-analyze affected and low-confidence functions."""
@@ -363,6 +385,35 @@ class Supervisor:
                         "fields": us.definition.field_count,
                     },
                 ))
+
+        pending_signatures = [
+            r for r in self.results.values()
+            if r.signature and not r.signature_applied and not r.skipped and not r.error
+        ]
+        if pending_signatures:
+            sigs_retried = 0
+            for r in pending_signatures:
+                try:
+                    self.client.set_function_signature(r.address, r.signature)
+                    r.signature_applied = True
+                    sigs_retried += 1
+                except Exception:
+                    logger.debug(
+                        "Signature retry still failed for 0x%08x: %s",
+                        r.address, r.signature,
+                    )
+            self._emit(Event(
+                type=EventType.CLEANUP_SIGNATURES_RETRIED,
+                phase=Phase.CLEANUP,
+                message=(
+                    f"Retried {len(pending_signatures)} pending signatures, "
+                    f"{sigs_retried} succeeded."
+                ),
+                data={
+                    "pending": len(pending_signatures),
+                    "succeeded": sigs_retried,
+                },
+            ))
 
         low_confidence = [
             r for r in self.results.values()
