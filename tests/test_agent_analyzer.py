@@ -1,5 +1,7 @@
 """Tests for the analyzer agent."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 from kong.agent.analyzer import (
