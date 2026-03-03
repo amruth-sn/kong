@@ -17,7 +17,7 @@ from kong.agent.signatures import SignatureDB
 from kong.agent.triage import TriageAgent, TriageResult
 from kong.config import KongConfig
 from kong.ghidra.client import GhidraClient
-from kong.ghidra.types import BinaryInfo, FunctionInfo
+from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
 
 
 @dataclass
@@ -92,7 +92,7 @@ class Supervisor:
         self.triage_result: TriageResult | None = None
         self.binary_info: BinaryInfo | None = None
         self.functions: list[FunctionInfo] = []
-        self.strings: list = []
+        self.strings: list[StringEntry] = []
         self._listeners: list[EventCallback] = []
         self._paused: bool = False
 
@@ -356,7 +356,7 @@ class Supervisor:
         ))
 
 
-    def _stats_dict(self) -> dict:
+    def _stats_dict(self) -> dict[str, int | float]:
         s = self.stats
         return {
             "total_functions": s.total_functions,

@@ -277,24 +277,6 @@ class Analyzer:
             for addr, name in sorted(context.known_functions.items()):
                 parts.append(f"- 0x{addr:08x}: {name}")
 
-        parts.append("")
-        parts.append("### Instructions")
-        parts.append(
-            "Analyze the target function. Respond with a JSON object:\n"
-            "```json\n"
-            "{\n"
-            '  "name": "descriptive_function_name",\n'
-            '  "signature": "return_type name(param_type param_name, ...)",\n'
-            '  "confidence": <0-100>,\n'
-            '  "classification": "one of: crypto, networking, io, memory, '
-            'string, math, init, cleanup, handler, parser, utility, unknown",\n'
-            '  "comments": "Brief description of what the function does",\n'
-            '  "reasoning": "Why you chose this name and classification",\n'
-            '  "variables": [{"old_name": "var1", "new_name": "descriptive_name"}]\n'
-            "}\n"
-            "```"
-        )
-
         return "\n".join(parts)
 
     def _write_back(self, addr: int, response: LLMResponse) -> None:
