@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from kong.llm.client import AnthropicClient, TokenUsage, _PRICING
+from kong.llm.client import (
+    AnthropicClient,
+    ModelTokenUsage,
+    TokenUsage,
+    _PRICING,
+)
 
 
 def _mock_message(text: str, input_tokens: int = 100, output_tokens: int = 50):
@@ -16,6 +21,8 @@ def _mock_message(text: str, input_tokens: int = 100, output_tokens: int = 50):
     usage = MagicMock()
     usage.input_tokens = input_tokens
     usage.output_tokens = output_tokens
+    usage.cache_creation_input_tokens = 0
+    usage.cache_read_input_tokens = 0
 
     msg = MagicMock()
     msg.content = [block]
@@ -71,7 +78,7 @@ class TestAnthropicClient:
         assert client.usage.calls == 2
 
     @patch("kong.llm.client.anthropic.Anthropic")
-    def test_passes_system_prompt(self, mock_anthropic_cls):
+    def test_passes_system_prompt_with_cache_control(self, mock_anthropic_cls):
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
         mock_client.messages.create.return_value = _mock_message('{"name": "f"}')
@@ -81,7 +88,39 @@ class TestAnthropicClient:
 
         call_kwargs = mock_client.messages.create.call_args
         assert "system" in call_kwargs.kwargs
-        assert "reverse engineer" in call_kwargs.kwargs["system"].lower()
+        system_val = call_kwargs.kwargs["system"]
+        assert isinstance(system_val, list)
+        assert system_val[0]["cache_control"] == {"type": "ephemeral"}
+        assert "reverse engineer" in system_val[0]["text"].lower()
+
+    @patch("kong.llm.client.anthropic.Anthropic")
+    def test_model_override(self, mock_anthropic_cls):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _mock_message('{"name": "f"}')
+
+        client = AnthropicClient(api_key="test-key")
+        client.analyze_function("prompt", model="claude-haiku-4-5-20251001")
+
+        call_kwargs = mock_client.messages.create.call_args
+        assert call_kwargs.kwargs["model"] == "claude-haiku-4-5-20251001"
+
+    @patch("kong.llm.client.anthropic.Anthropic")
+    def test_per_model_cost_tracking(self, mock_anthropic_cls):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _mock_message(
+            '{"name": "f"}', input_tokens=100, output_tokens=50
+        )
+
+        client = AnthropicClient(api_key="test-key")
+        client.analyze_function("p1")
+        client.analyze_function("p2", model="claude-haiku-4-5-20251001")
+
+        assert len(client.usage.by_model) == 2
+        assert "claude-sonnet-4-20250514" in client.usage.by_model
+        assert "claude-haiku-4-5-20251001" in client.usage.by_model
+        assert client.usage.calls == 2
 
     @patch("kong.llm.client.anthropic.Anthropic")
     def test_handles_malformed_response(self, mock_anthropic_cls):
@@ -112,29 +151,58 @@ class TestAnthropicClient:
         assert response.output_tokens == 200
 
 
-class TestTokenUsage:
-    def test_total_tokens(self):
-        u = TokenUsage(input_tokens=100, output_tokens=50)
-        assert u.total_tokens == 150
-
+class TestModelTokenUsage:
     def test_cost_calculation(self):
-        u = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        u = ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
         cost = u.cost_usd("claude-sonnet-4-20250514")
         assert cost == 3.0 + 15.0
 
     def test_cost_with_unknown_model_uses_default(self):
-        u = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        u = ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
         cost = u.cost_usd("unknown-model")
         assert cost == 3.0 + 15.0
+
+    def test_cache_token_costs(self):
+        u = ModelTokenUsage(
+            input_tokens=0, output_tokens=0,
+            cache_creation_tokens=1_000_000, cache_read_tokens=1_000_000,
+        )
+        cost = u.cost_usd("claude-sonnet-4-20250514")
+        assert cost == (3.0 * 1.25) + (3.0 * 0.10)
+
+
+class TestTokenUsage:
+    def test_aggregate_properties(self):
+        u = TokenUsage()
+        u._get("model_a").input_tokens = 100
+        u._get("model_a").output_tokens = 50
+        u._get("model_b").input_tokens = 200
+        u._get("model_b").output_tokens = 80
+        u._get("model_a").calls = 1
+        u._get("model_b").calls = 2
+
+        assert u.input_tokens == 300
+        assert u.output_tokens == 130
+        assert u.total_tokens == 430
+        assert u.calls == 3
+
+    def test_total_cost_across_models(self):
+        u = TokenUsage()
+        u._get("claude-sonnet-4-20250514").input_tokens = 1_000_000
+        u._get("claude-sonnet-4-20250514").output_tokens = 0
+        u._get("claude-haiku-4-5-20251001").input_tokens = 1_000_000
+        u._get("claude-haiku-4-5-20251001").output_tokens = 0
+
+        assert u.total_cost_usd == 3.0 + 1.0
 
 
 class TestPricingValues:
     def test_pricing_entries_exist(self):
         assert "claude-sonnet-4-20250514" in _PRICING
-        assert "claude-haiku-4-20250414" in _PRICING
+        assert "claude-haiku-4-5-20251001" in _PRICING
 
     def test_haiku_cheaper_than_sonnet(self):
-        haiku_in, haiku_out = _PRICING["claude-haiku-4-20250414"]
+        haiku_in, haiku_out = _PRICING["claude-haiku-4-5-20251001"]
         sonnet_in, sonnet_out = _PRICING["claude-sonnet-4-20250514"]
         assert haiku_in < sonnet_in
         assert haiku_out < sonnet_out
