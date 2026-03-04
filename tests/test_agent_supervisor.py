@@ -22,6 +22,7 @@ def _make_client(functions=None, binary_info=None):
     client.get_strings.return_value = []
     client.get_callers.return_value = []
     client.get_callees.return_value = []
+    client.get_decompilation.return_value = "void stub(void) { return; }"
     return client
 
 
@@ -240,3 +241,59 @@ class TestAnalysisStats:
     def test_name_rate_zero_functions(self):
         stats = AnalysisStats(total_functions=0)
         assert stats.name_rate == 0.0
+
+
+class TestSupervisorExport:
+    def test_export_creates_source_file(self, tmp_path):
+        funcs = [_func(0x1000, "a")]
+        client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void a(void) { return; }"
+        config = KongConfig(output=OutputConfig(
+            directory=tmp_path / "out",
+            formats=["source"],
+        ))
+        sup = Supervisor(client, config)
+        sup.run()
+
+        assert (tmp_path / "out" / "decompiled.c").exists()
+
+    def test_export_creates_json_file(self, tmp_path):
+        funcs = [_func(0x1000, "a")]
+        client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void a(void) { return; }"
+        config = KongConfig(output=OutputConfig(
+            directory=tmp_path / "out",
+            formats=["json"],
+        ))
+        sup = Supervisor(client, config)
+        sup.run()
+
+        assert (tmp_path / "out" / "analysis.json").exists()
+
+    def test_export_emits_export_file_events(self, tmp_path):
+        funcs = [_func(0x1000, "a")]
+        client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void a(void) { return; }"
+        config = KongConfig(output=OutputConfig(
+            directory=tmp_path / "out",
+            formats=["source", "json"],
+        ))
+        sup = Supervisor(client, config)
+
+        events = []
+        sup.on_event(events.append)
+        sup.run()
+
+        export_events = [e for e in events if e.type == EventType.EXPORT_FILE]
+        assert len(export_events) == 2
+        formats_emitted = {e.data["format"] for e in export_events}
+        assert formats_emitted == {"source", "json"}
+
+    def test_export_skips_ghidra_format(self, tmp_path):
+        client = _make_client()
+        config = KongConfig(output=OutputConfig(
+            directory=tmp_path / "out",
+            formats=["ghidra"],
+        ))
+        sup = Supervisor(client, config)
+        sup.run()
