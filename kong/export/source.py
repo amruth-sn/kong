@@ -11,15 +11,15 @@ from kong.llm.client import TokenUsage
 SECTION_ORDER: list[tuple[str, str]] = [
     ("crypto", "Crypto"),
     ("networking", "Networking"),
-    ("io", "IO"),
-    ("memory", "Memory"),
-    ("string", "String"),
+    ("io", "I/O"),
+    ("memory", "Memory Management"),
+    ("string", "String Operations"),
     ("math", "Math"),
-    ("init", "Init"),
+    ("init", "Initialization"),
     ("cleanup", "Cleanup"),
-    ("handler", "Handler"),
-    ("parser", "Parser"),
-    ("utility", "Utility"),
+    ("handler", "Handlers"),
+    ("parser", "Parsers"),
+    ("utility", "Utilities"),
     ("unknown", "General"),
 ]
 
