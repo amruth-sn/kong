@@ -10,12 +10,16 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry, StructDefinition
+
+if TYPE_CHECKING:
+    from kong.agent.deobfuscator import Deobfuscator
+    from kong.llm.tools import ToolExecutor, ToolSchema
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +33,8 @@ class LLMClient(Protocol):
         self,
         prompt: str,
         system: str,
-        tools: list[dict[str, object]],
-        tool_executor: object,
+        tools: list[ToolSchema],
+        tool_executor: ToolExecutor,
         max_rounds: int = 10,
     ) -> LLMResponse: ...
 
@@ -115,7 +119,7 @@ class Analyzer:
         self,
         client: GhidraClient,
         llm_client: LLMClient,
-        deobfuscator: object | None = None,
+        deobfuscator: Deobfuscator | None = None,
     ) -> None:
         self.client = client
         self.llm = llm_client
@@ -131,14 +135,15 @@ class Analyzer:
         model: str | None = None,
     ) -> FunctionResult:
         """Full analysis pipeline for one function."""
-        from kong.agent.deobfuscator import Deobfuscator, classify_obfuscation
+        # Inline import: deobfuscator imports from analyzer at module level (circular).
+        from kong.agent.deobfuscator import classify_obfuscation
 
         func = item.function
         context = self._build_context(item, binary_info, known_results, strings, known_types)
 
         techniques = classify_obfuscation(context.decompilation) if self._deobfuscator else []
 
-        if techniques and isinstance(self._deobfuscator, Deobfuscator):
+        if techniques and self._deobfuscator:
             response, tool_calls = self._deobfuscator.deobfuscate(context, techniques)
             sig_applied = self._write_back(func.address, response)
             return FunctionResult(

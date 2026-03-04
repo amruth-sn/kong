@@ -6,7 +6,8 @@ from unittest.mock import MagicMock
 
 from kong.agent.events import EventType, Phase
 from kong.agent.models import FunctionResult
-from kong.agent.supervisor import AnalysisStats, Supervisor
+from kong.agent.models import AnalysisStats
+from kong.agent.supervisor import Supervisor
 from kong.config import KongConfig, OutputConfig
 from kong.ghidra.types import BinaryInfo, FunctionClassification, FunctionInfo
 

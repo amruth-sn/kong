@@ -91,33 +91,6 @@ class StructAccumulator:
         return groups
 
     @staticmethod
-    def _split_by_field_overlap(proposals: list[StructProposal]) -> list[list[StructProposal]]:
-        """Within same-size proposals, cluster by overlapping field offsets."""
-        if len(proposals) <= 1:
-            return [proposals]
-
-        assigned: list[int] = [-1] * len(proposals)
-        group_id = 0
-
-        for i, pi in enumerate(proposals):
-            if assigned[i] == -1:
-                assigned[i] = group_id
-                group_id += 1
-
-            offsets_i = {f.offset for f in pi.fields}
-            for j in range(i + 1, len(proposals)):
-                if assigned[j] != -1:
-                    continue
-                offsets_j = {f.offset for f in proposals[j].fields}
-                if offsets_i & offsets_j:
-                    assigned[j] = assigned[i]
-
-        clusters: dict[int, list[StructProposal]] = defaultdict(list)
-        for idx, gid in enumerate(assigned):
-            clusters[gid].append(proposals[idx])
-        return list(clusters.values())
-
-    @staticmethod
     def _merge_group(group: list[StructProposal]) -> UnifiedStruct:
         name_counts: dict[str, int] = defaultdict(int)
         fields_by_offset: dict[int, list[StructFieldProposal]] = defaultdict(list)

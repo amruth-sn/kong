@@ -9,19 +9,21 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 
 from kong.agent.analyzer import Analyzer, LLMClient, LLMResponse
 from kong.agent.deobfuscator import Deobfuscator, classify_obfuscation
 from kong.agent.events import Event, EventCallback, EventType, Phase
-from kong.agent.models import FunctionResult
+from kong.agent.models import AnalysisStats, FunctionResult
 from kong.agent.queue import WorkItem, WorkQueue
 from kong.agent.signatures import SignatureDB
 from kong.agent.triage import TriageAgent, TriageResult
 from kong.agent.type_recovery import StructAccumulator, apply_unified_structs
 from kong.config import KongConfig
+from kong.export.source import ExportData, export_source
+from kong.export.structured import export_json
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
+from kong.llm.client import TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -30,60 +32,6 @@ SONNET_MODEL = "claude-sonnet-4-20250514"
 
 MAX_PARALLEL_LLM = 4
 REQUEST_STAGGER_SECONDS = 0.5
-
-
-@dataclass
-class AnalysisStats:
-    """Aggregate statistics for the full run."""
-    total_functions: int = 0
-    analyzed: int = 0
-    renamed: int = 0
-    confirmed: int = 0
-    high_confidence: int = 0   # >= 80
-    medium_confidence: int = 0  # 50-79
-    low_confidence: int = 0     # < 50
-    skipped: int = 0
-    errors: int = 0
-    llm_calls: int = 0
-    start_time: float = 0.0
-    end_time: float = 0.0
-    signature_matches: int = 0
-
-    @property
-    def named(self) -> int:
-        return self.renamed + self.confirmed
-
-    @property
-    def duration_seconds(self) -> float:
-        end = self.end_time or time.time()
-        return end - self.start_time if self.start_time else 0.0
-
-    @property
-    def name_rate(self) -> float:
-        return self.named / self.total_functions if self.total_functions else 0.0
-
-    def record_result(self, result: FunctionResult) -> None:
-        if result.skipped:
-            self.skipped += 1
-            return
-        if result.error:
-            self.errors += 1
-            return
-        self.analyzed += 1
-        self.llm_calls += result.llm_calls
-        if result.name:
-            if result.name != result.original_name:
-                self.renamed += 1
-            else:
-                self.confirmed += 1
-        # TODO: calibrate these eventually. these buckets are arbitrary, need eval data to
-        # determine meaningful confidence tiers for the LLM's self-reported scores.
-        if result.confidence >= 80:
-            self.high_confidence += 1
-        elif result.confidence >= 50:
-            self.medium_confidence += 1
-        else:
-            self.low_confidence += 1
 
 
 class Supervisor:
@@ -125,13 +73,20 @@ class Supervisor:
         for cb in self._listeners:
             cb(event)
 
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
     def pause(self) -> None:
         self._paused = True
 
     def resume(self) -> None:
         self._paused = False
 
-    
+    def export(self) -> None:
+        """Trigger export manually (e.g. from TUI keybind)."""
+        self._run_export()
+
     def run(self) -> dict[int, FunctionResult]:
         """Run the full analysis pipeline. Returns addr -> FunctionResult."""
         self.stats.start_time = time.time()
@@ -658,10 +613,6 @@ class Supervisor:
 
     def _run_export(self) -> None:
         """Generate output files."""
-        from kong.export.source import ExportData, export_source
-        from kong.export.structured import export_json
-        from kong.llm.client import TokenUsage
-
         self._emit(Event(
             type=EventType.PHASE_START,
             phase=Phase.EXPORT,

@@ -151,6 +151,7 @@ def analyze(
             _print_final_stats(supervisor, llm_client)
             client.close()
     else:
+        # Deferred to avoid loading Textual when running --headless
         from kong.tui.app import KongApp
         app = KongApp(supervisor)
         try:

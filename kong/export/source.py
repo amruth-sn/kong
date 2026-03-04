@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kong.agent.models import FunctionResult
-from kong.agent.supervisor import AnalysisStats
+from kong.agent.models import AnalysisStats
 from kong.ghidra.types import BinaryInfo
 from kong.llm.client import TokenUsage
 

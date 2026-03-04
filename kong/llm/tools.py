@@ -13,6 +13,7 @@ from typing import Any, TYPE_CHECKING
 
 from kong.symbolic.dead_code import ResolvedPredicate, Resolution, eliminate_dead_code
 from kong.symbolic.simplifier import simplify_expression
+from kong.symbolic.state_machine import trace_state_machine
 
 if TYPE_CHECKING:
     from kong.ghidra.client import GhidraClient
@@ -199,8 +200,7 @@ class ToolExecutor:
 
     def __init__(self, ghidra_client: GhidraClient) -> None:
         self.client = ghidra_client
-        self.call_log: list[ToolCallRecord] = field(default_factory=list)
-        self.call_log = []
+        self.call_log: list[ToolCallRecord] = []
 
     @property
     def call_count(self) -> int:
@@ -262,8 +262,6 @@ class ToolExecutor:
         return cleaned
 
     def _trace_state_machine(self, inputs: dict[str, Any]) -> str:
-        from kong.symbolic.state_machine import trace_state_machine
-
         func_addr = inputs["function_address"]
         state_var = inputs["state_variable"]
         result = trace_state_machine(self.client, func_addr, state_var)

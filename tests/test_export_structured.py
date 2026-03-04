@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from kong.agent.models import FunctionResult
-from kong.agent.supervisor import AnalysisStats
+from kong.agent.models import AnalysisStats
 from kong.export.source import ExportData
 from kong.export.structured import export_json
 from kong.ghidra.types import BinaryInfo

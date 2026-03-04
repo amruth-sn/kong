@@ -8,6 +8,7 @@ from textual.app import App
 from textual.widget import Widget
 from textual.widgets import RichLog, Static
 
+from kong.agent.events import Event, EventType
 from kong.agent.supervisor import Supervisor
 from kong.tui.app import EVENT_STYLES, AgentEvent, KongApp
 from kong.tui.widgets import AgentLog, BinaryHeader, ProgressWidget, StatusBar
@@ -93,7 +94,7 @@ class TestStatusBar:
 class TestKongApp:
     def test_is_app_subclass(self) -> None:
         supervisor = create_autospec(Supervisor, instance=True)
-        supervisor._paused = False
+        supervisor.is_paused = False
         supervisor.stats = MagicMock()
         supervisor.stats.llm_calls = 0
         app = KongApp(supervisor)
@@ -101,7 +102,7 @@ class TestKongApp:
 
     def test_stores_supervisor(self) -> None:
         supervisor = create_autospec(Supervisor, instance=True)
-        supervisor._paused = False
+        supervisor.is_paused = False
         supervisor.stats = MagicMock()
         supervisor.stats.llm_calls = 0
         app = KongApp(supervisor)
@@ -113,7 +114,6 @@ class TestEventStyles:
         assert isinstance(EVENT_STYLES, dict)
 
     def test_event_styles_has_expected_keys(self) -> None:
-        from kong.agent.events import EventType
         expected_keys = {
             EventType.PHASE_START,
             EventType.PHASE_COMPLETE,
@@ -132,7 +132,6 @@ class TestEventStyles:
 
 class TestAgentEvent:
     def test_agent_event_wraps_event(self) -> None:
-        from kong.agent.events import Event, EventType
         event = Event(type=EventType.RUN_START, message="test")
         msg = AgentEvent(event)
         assert msg.event is event

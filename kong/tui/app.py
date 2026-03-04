@@ -123,11 +123,11 @@ class KongApp(App):
             elapsed=elapsed,
             llm_calls=llm_calls,
             cost=cost,
-            paused=self.supervisor._paused,
+            paused=self.supervisor.is_paused,
         )
 
     def action_toggle_pause(self) -> None:
-        if self.supervisor._paused:
+        if self.supervisor.is_paused:
             self.supervisor.resume()
         else:
             self.supervisor.pause()
@@ -140,4 +140,4 @@ class KongApp(App):
         self.run_worker(self._run_export, thread=True)
 
     def _run_export(self) -> None:
-        self.supervisor._run_export()
+        self.supervisor.export()
