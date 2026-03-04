@@ -33,6 +33,28 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     ctx.obj["verbose"] = verbose
 
 
+def _print_final_stats(supervisor: Supervisor, llm_client: AnthropicClient) -> None:
+    stats = supervisor.stats
+    console.print()
+    console.print(
+        f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named "
+        f"({stats.renamed} renamed, {stats.confirmed} confirmed)"
+    )
+    console.print(
+        f"[bold]Confidence:[/bold] {stats.high_confidence} high, "
+        f"{stats.medium_confidence} med, {stats.low_confidence} low"
+    )
+    console.print(f"[bold]LLM calls:[/bold] {stats.llm_calls}")
+    for model_name, mu in llm_client.usage.by_model.items():
+        short_name = model_name.split("-")[1] if "-" in model_name else model_name
+        console.print(
+            f"  {short_name}: {mu.calls} calls, "
+            f"${mu.cost_usd(model_name):.4f}"
+        )
+    console.print(f"[bold]Cost:[/bold] ${llm_client.total_cost_usd:.4f}")
+    console.print(f"[bold]Duration:[/bold] {stats.duration_seconds:.1f}s")
+
+
 @cli.command()
 @click.argument("binary", type=click.Path(exists=True, dir_okay=False))
 @click.option("--headless", is_flag=True, help="Run without TUI (for CI/Docker).")
@@ -47,7 +69,7 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     "formats",
     type=click.Choice(["source", "json", "ghidra"], case_sensitive=False),
     multiple=True,
-    default=["source", "json", "ghidra"],
+    default=["source", "json"],
     help="Output formats.",
 )
 @click.option("--ghidra-dir", default=None, help="Ghidra installation directory.")
@@ -100,7 +122,7 @@ def analyze(
     info = client.get_binary_info()
     console.print(f"[green]Loaded.[/green] {info.arch} {info.format} ({info.compiler})")
 
-    llm_client = AnthropicClient(api_key="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")
+    llm_client = AnthropicClient()
 
     def print_event(event: Event) -> None:
         style = {
@@ -118,33 +140,26 @@ def analyze(
             console.print(escape(event.message))
 
     supervisor = Supervisor(client, config, llm_client=llm_client)
-    supervisor.on_event(print_event)
 
-    try:
-        supervisor.run()
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/yellow]")
-    finally:
-        stats = supervisor.stats
-        console.print()
-        console.print(
-            f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named "
-            f"({stats.renamed} renamed, {stats.confirmed} confirmed)"
-        )
-        console.print(
-            f"[bold]Confidence:[/bold] {stats.high_confidence} high, "
-            f"{stats.medium_confidence} med, {stats.low_confidence} low"
-        )
-        console.print(f"[bold]LLM calls:[/bold] {stats.llm_calls}")
-        for model_name, mu in llm_client.usage.by_model.items():
-            short_name = model_name.split("-")[1] if "-" in model_name else model_name
-            console.print(
-                f"  {short_name}: {mu.calls} calls, "
-                f"${mu.cost_usd(model_name):.4f}"
-            )
-        console.print(f"[bold]Cost:[/bold] ${llm_client.total_cost_usd:.4f}")
-        console.print(f"[bold]Duration:[/bold] {stats.duration_seconds:.1f}s")
-        client.close()
+    if headless:
+        supervisor.on_event(print_event)
+        try:
+            supervisor.run()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted.[/yellow]")
+        finally:
+            _print_final_stats(supervisor, llm_client)
+            client.close()
+    else:
+        from kong.tui.app import KongApp
+        app = KongApp(supervisor)
+        try:
+            app.run()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            _print_final_stats(supervisor, llm_client)
+            client.close()
 
 
 @cli.command()
