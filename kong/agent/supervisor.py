@@ -341,6 +341,7 @@ class Supervisor:
     def _pick_model(self, item: WorkItem, decompilation: str) -> str:
         """Choose Haiku for small/simple functions, Sonnet for complex ones."""
         line_count = decompilation.count("\n")
+        # TODO: calibrate — thresholds are initial guesses, need eval data to tune.
         if item.function.size <= 200 and len(item.callees) <= 2 and line_count <= 30:
             return HAIKU_MODEL
         return SONNET_MODEL
@@ -657,15 +658,63 @@ class Supervisor:
 
     def _run_export(self) -> None:
         """Generate output files."""
+        from kong.export.source import ExportData, export_source
+        from kong.export.structured import export_json
+        from kong.llm.client import TokenUsage
+
         self._emit(Event(
             type=EventType.PHASE_START,
             phase=Phase.EXPORT,
             message="Starting export...",
         ))
 
-        # TODO: export logic.
         output_dir = self.config.output.directory
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        exportable_addrs = [
+            addr for addr, r in self.results.items()
+            if not r.skipped and not r.error
+        ]
+        decompilations: dict[int, str] = {}
+        for addr in exportable_addrs:
+            decomp = self.client.get_decompilation(addr)
+            if decomp:
+                decompilations[addr] = decomp
+
+        raw_usage = getattr(self.llm_client, "usage", None) if self.llm_client else None
+        token_usage = raw_usage if isinstance(raw_usage, TokenUsage) else TokenUsage()
+
+        export_data = ExportData(
+            binary_info=self.binary_info or BinaryInfo(
+                arch="unknown", format="unknown", endianness="unknown",
+                word_size=0, compiler="unknown", name="unknown",
+            ),
+            stats=self.stats,
+            results=self.results,
+            decompilations=decompilations,
+            token_usage=token_usage,
+            duration_seconds=self.stats.duration_seconds,
+        )
+
+        formats = self.config.output.formats
+
+        if "source" in formats:
+            path = export_source(export_data, output_dir / "decompiled.c")
+            self._emit(Event(
+                type=EventType.EXPORT_FILE,
+                phase=Phase.EXPORT,
+                message=f"Exported {path}",
+                data={"path": str(path), "format": "source"},
+            ))
+
+        if "json" in formats:
+            path = export_json(export_data, output_dir / "analysis.json")
+            self._emit(Event(
+                type=EventType.EXPORT_FILE,
+                phase=Phase.EXPORT,
+                message=f"Exported {path}",
+                data={"path": str(path), "format": "json"},
+            ))
 
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,
