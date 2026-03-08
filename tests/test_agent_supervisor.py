@@ -45,7 +45,7 @@ class TestSupervisorLifecycle:
         assert types[0] == EventType.RUN_START
         assert types[-1] == EventType.RUN_COMPLETE
 
-    def test_all_four_phases_run(self, tmp_path):
+    def test_all_five_phases_run(self, tmp_path):
         client = _make_client()
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
         sup = Supervisor(client, config)
@@ -55,10 +55,8 @@ class TestSupervisorLifecycle:
         sup.run()
 
         phase_starts = [e.phase for e in events if e.type == EventType.PHASE_START]
-        assert Phase.TRIAGE in phase_starts
-        assert Phase.ANALYSIS in phase_starts
-        assert Phase.CLEANUP in phase_starts
-        assert Phase.EXPORT in phase_starts
+        expected = [Phase.TRIAGE, Phase.ANALYSIS, Phase.CLEANUP, Phase.SYNTHESIS, Phase.EXPORT]
+        assert phase_starts == expected
 
     def test_run_with_no_functions(self, tmp_path):
         client = _make_client(functions=[])
@@ -298,3 +296,65 @@ class TestSupervisorExport:
         ))
         sup = Supervisor(client, config)
         sup.run()
+
+
+class TestSupervisorSynthesis:
+    def test_synthesis_phase_runs(self, tmp_path):
+        funcs = [_func(0x1000, "a")]
+        client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void a(void) { return; }"
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+
+        from kong.agent.analyzer import LLMResponse
+
+        mock_llm = MagicMock()
+        mock_llm.analyze_function.return_value = LLMResponse(
+            name="init", confidence=80, raw='{"globals":{},"structs":[],"name_refinements":{}}',
+        )
+
+        sup = Supervisor(client, config, llm_client=mock_llm)
+
+        events = []
+        sup.on_event(events.append)
+        sup.run()
+
+        phase_starts = [e.phase for e in events if e.type == EventType.PHASE_START]
+        assert Phase.SYNTHESIS in phase_starts
+
+        phase_completes = [e.phase for e in events if e.type == EventType.PHASE_COMPLETE]
+        assert Phase.SYNTHESIS in phase_completes
+
+    def test_synthesis_skipped_without_llm_client(self, tmp_path):
+        funcs = [_func(0x1000, "a")]
+        client = _make_client(functions=funcs)
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+        sup = Supervisor(client, config)
+
+        events = []
+        sup.on_event(events.append)
+        sup.run()
+
+        synthesis_completes = [
+            e for e in events
+            if e.type == EventType.PHASE_COMPLETE and e.phase == Phase.SYNTHESIS
+        ]
+        assert len(synthesis_completes) == 1
+        assert "skipped" in synthesis_completes[0].message.lower()
+
+    def test_synthesis_skipped_with_no_results(self, tmp_path):
+        client = _make_client(functions=[])
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+
+        mock_llm = MagicMock()
+        sup = Supervisor(client, config, llm_client=mock_llm)
+
+        events = []
+        sup.on_event(events.append)
+        sup.run()
+
+        synthesis_completes = [
+            e for e in events
+            if e.type == EventType.PHASE_COMPLETE and e.phase == Phase.SYNTHESIS
+        ]
+        assert len(synthesis_completes) == 1
+        assert "skipped" in synthesis_completes[0].message.lower()
