@@ -1,6 +1,6 @@
 """Supervisor agent — orchestrates the full analysis pipeline.
 
-Drives: triage → analysis → cleanup → export.
+Drives: triage → analysis → cleanup → synthesis → export.
 Emits structured events for TUI/CLI consumption.
 """
 
@@ -24,6 +24,8 @@ from kong.export.structured import export_json
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
 from kong.llm.client import TokenUsage
+from kong.normalizer.syntactic import normalize
+from kong.synthesis.semantic import SemanticSynthesizer, SynthesisResult
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,7 @@ class Supervisor:
         self.functions: list[FunctionInfo] = []
         self.strings: list[StringEntry] = []
         self.struct_accumulator = StructAccumulator()
+        self._synthesis_result: SynthesisResult | None = None
         self._listeners: list[EventCallback] = []
         self._paused: bool = False
 
@@ -99,6 +102,7 @@ class Supervisor:
             self._run_triage()
             self._run_analysis()
             self._run_cleanup()
+            self._run_synthesis()
             self._run_export()
         except Exception as e:
             self._emit(Event(
@@ -611,6 +615,96 @@ class Supervisor:
             },
         ))
 
+    def _run_synthesis(self) -> None:
+        """Cross-function synthesis: unify globals, synthesize structs, refine names."""
+        self._emit(Event(
+            type=EventType.PHASE_START,
+            phase=Phase.SYNTHESIS,
+            message="Starting synthesis...",
+        ))
+
+        if self.llm_client is None:
+            self._emit(Event(
+                type=EventType.PHASE_COMPLETE,
+                phase=Phase.SYNTHESIS,
+                message="Synthesis skipped (no LLM client).",
+            ))
+            return
+
+        decompilations: dict[int, str] = {}
+        for addr, result in self.results.items():
+            if result.skipped or result.error:
+                continue
+            decomp = self.client.get_decompilation(addr)
+            if decomp:
+                decompilations[addr] = normalize(decomp)
+
+        if not decompilations:
+            self._emit(Event(
+                type=EventType.PHASE_COMPLETE,
+                phase=Phase.SYNTHESIS,
+                message="Synthesis skipped (no decompilations).",
+            ))
+            return
+
+        synthesizer = SemanticSynthesizer(self.llm_client)
+        try:
+            synthesis_result = synthesizer.synthesize(
+                list(self.results.values()), decompilations, model=SONNET_MODEL,
+            )
+        except Exception as e:
+            logger.warning("Synthesis failed: %s", e)
+            self._emit(Event(
+                type=EventType.PHASE_COMPLETE,
+                phase=Phase.SYNTHESIS,
+                message=f"Synthesis failed: {e}",
+                data={"error": str(e)},
+            ))
+            return
+
+        if synthesis_result.globals:
+            self._emit(Event(
+                type=EventType.SYNTHESIS_GLOBALS_UNIFIED,
+                phase=Phase.SYNTHESIS,
+                message=f"Unified {len(synthesis_result.globals)} global variables.",
+                data={"count": len(synthesis_result.globals), "globals": synthesis_result.globals},
+            ))
+
+        if synthesis_result.structs:
+            self._emit(Event(
+                type=EventType.SYNTHESIS_STRUCTS_SYNTHESIZED,
+                phase=Phase.SYNTHESIS,
+                message=f"Synthesized {len(synthesis_result.structs)} structs.",
+                data={"count": len(synthesis_result.structs)},
+            ))
+
+        if synthesis_result.name_refinements:
+            for addr_str, new_name in synthesis_result.name_refinements.items():
+                addr = int(addr_str, 16) if addr_str.startswith("0x") else int(addr_str)
+                if addr in self.results:
+                    self.results[addr].name = new_name
+                    try:
+                        self.client.rename_function(addr, new_name)
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to rename 0x%08x to %s during synthesis: %s",
+                            addr, new_name, e,
+                        )
+            self._emit(Event(
+                type=EventType.SYNTHESIS_NAMES_REFINED,
+                phase=Phase.SYNTHESIS,
+                message=f"Refined {len(synthesis_result.name_refinements)} function names.",
+                data={"count": len(synthesis_result.name_refinements)},
+            ))
+
+        self._synthesis_result = synthesis_result
+
+        self._emit(Event(
+            type=EventType.PHASE_COMPLETE,
+            phase=Phase.SYNTHESIS,
+            message="Synthesis complete.",
+        ))
+
     def _run_export(self) -> None:
         """Generate output files."""
         self._emit(Event(
@@ -630,7 +724,13 @@ class Supervisor:
         for addr in exportable_addrs:
             decomp = self.client.get_decompilation(addr)
             if decomp:
-                decompilations[addr] = decomp
+                decompilations[addr] = normalize(decomp)
+
+        if self._synthesis_result:
+            synthesizer = SemanticSynthesizer(self.llm_client)
+            decompilations = synthesizer.apply_to_decompilations(
+                self._synthesis_result, decompilations,
+            )
 
         raw_usage = getattr(self.llm_client, "usage", None) if self.llm_client else None
         token_usage = raw_usage if isinstance(raw_usage, TokenUsage) else TokenUsage()
