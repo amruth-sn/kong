@@ -293,8 +293,8 @@ def eval_cmd(analysis_json: str, source_file: str) -> None:
     for pf in scorecard.per_function:
         pred = pf["predicted_name"]
         truth = pf["truth_name"]
-        sym = pf["symbol_score"]
-        typ = pf["type_score"]
+        sym = pf["symbol_accuracy"]
+        typ = pf["type_accuracy"]
         match_indicator = "[green]OK[/green]" if sym >= 0.8 else "[yellow]~~[/yellow]" if sym > 0 else "[red]NO[/red]"
         console.print(f"  {match_indicator} {pred:30s} -> {truth:20s}  sym={sym:.2f}  type={typ:.2f}")
 
