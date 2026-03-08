@@ -12,6 +12,7 @@ class Phase(Enum):
     TRIAGE = "triage"
     ANALYSIS = "analysis"
     CLEANUP = "cleanup"
+    SYNTHESIS = "synthesis"
     EXPORT = "export"
 
 
@@ -34,6 +35,10 @@ class EventType(Enum):
     CLEANUP_TYPES_UNIFIED = "cleanup_types_unified"
     CLEANUP_TYPE_CREATED = "cleanup_type_created"
     CLEANUP_SIGNATURES_RETRIED = "cleanup_signatures_retried"
+
+    SYNTHESIS_GLOBALS_UNIFIED = "synthesis_globals_unified"
+    SYNTHESIS_STRUCTS_SYNTHESIZED = "synthesis_structs_synthesized"
+    SYNTHESIS_NAMES_REFINED = "synthesis_names_refined"
 
     DEOBFUSCATION_DETECTED = "deobfuscation_detected"
     DEOBFUSCATION_TOOL_CALL = "deobfuscation_tool_call"
