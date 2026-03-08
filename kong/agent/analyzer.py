@@ -16,6 +16,7 @@ from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry, StructDefinition
+from kong.normalizer.syntactic import normalize
 
 if TYPE_CHECKING:
     from kong.agent.deobfuscator import Deobfuscator
@@ -191,7 +192,7 @@ class Analyzer:
         """Assemble all context the LLM needs to analyze this function."""
         func = item.function
 
-        decompilation = self.client.get_decompilation(func.address)
+        decompilation = normalize(self.client.get_decompilation(func.address))
 
         caller_snippets = self._get_caller_snippets(item.callers, known_results)
         callee_snippets = self._get_callee_snippets(item.callees, known_results)
@@ -225,7 +226,7 @@ class Analyzer:
         for addr in caller_addrs[:3]:
             name = self._resolve_name(addr, known_results)
             try:
-                full = self.client.get_decompilation(addr)
+                full = normalize(self.client.get_decompilation(addr))
                 lines = full.split("\n")[:10]
                 snippet = "\n".join(lines)
             except Exception:
@@ -244,7 +245,7 @@ class Analyzer:
         for addr in callee_addrs[:5]:
             name = self._resolve_name(addr, known_results)
             try:
-                full = self.client.get_decompilation(addr)
+                full = normalize(self.client.get_decompilation(addr))
                 lines = full.split("\n")[:10]
                 snippet = "\n".join(lines)
             except Exception:

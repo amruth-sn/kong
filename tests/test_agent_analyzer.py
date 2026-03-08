@@ -294,3 +294,58 @@ class TestParseLLMJson:
         raw = '{"name": "test"}'
         resp = Analyzer.parse_llm_json(raw)
         assert resp.raw == raw
+
+
+class TestNormalizerIntegration:
+    def test_decompilation_normalized_before_prompt(self):
+        """Decompilation artifacts (undefined4, + -) are cleaned before reaching the LLM."""
+        raw_decomp = (
+            "undefined4 counter;\n"
+            "for (counter = 0; counter < n; counter = counter + 1) {\n"
+            "  x = x + -0x10;\n"
+            "}\n"
+        )
+        llm = _mock_llm(LLMResponse(name="f"))
+        client = _mock_client()
+        client.get_decompilation.return_value = raw_decomp
+
+        analyzer = Analyzer(client, llm)
+        analyzer.analyze(_item(), _binary_info(), {}, [])
+
+        prompt = llm.analyze_function.call_args[0][0]
+        assert "undefined4" not in prompt
+        assert "int counter" in prompt
+        assert "+ -" not in prompt
+        assert "- 0x10" in prompt
+
+    def test_caller_snippets_normalized(self):
+        raw_caller = "undefined4 i;\nfor (i = 0; i < n; i = i + 1) { x = x + -5; }\n"
+        llm = _mock_llm(LLMResponse(name="f"))
+        client = _mock_client()
+        client.get_decompilation.side_effect = lambda addr: (
+            raw_caller if addr == 0x3000 else "void target() { return; }"
+        )
+
+        item = _item(callers=[0x3000])
+        analyzer = Analyzer(client, llm)
+        ctx = analyzer._build_context(item, _binary_info(), {}, [])
+
+        assert len(ctx.caller_snippets) == 1
+        assert "undefined4" not in ctx.caller_snippets[0].snippet
+        assert "int i" in ctx.caller_snippets[0].snippet
+
+    def test_callee_snippets_normalized(self):
+        raw_callee = "undefined4 j;\nfor (j = 0; j < m; j = j + 1) { y = y + -3; }\n"
+        llm = _mock_llm(LLMResponse(name="f"))
+        client = _mock_client()
+        client.get_decompilation.side_effect = lambda addr: (
+            raw_callee if addr == 0x2000 else "void target() { callee(); }"
+        )
+
+        item = _item(callees=[0x2000])
+        analyzer = Analyzer(client, llm)
+        ctx = analyzer._build_context(item, _binary_info(), {}, [])
+
+        assert len(ctx.callee_snippets) == 1
+        assert "undefined4" not in ctx.callee_snippets[0].snippet
+        assert "- 3" in ctx.callee_snippets[0].snippet
