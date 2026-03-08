@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections import Counter
 from pathlib import Path
 
 import click
@@ -9,17 +11,18 @@ from rich.console import Console
 from rich.markup import escape
 
 from kong import __version__
-from collections import Counter
-
 from kong.agent.events import Event, EventType
 from kong.agent.supervisor import Supervisor
+from kong.banner import check_api_key, print_analyze_header, print_banner, print_setup_needed
 from kong.config import GhidraConfig, KongConfig, OutputConfig
+from kong.evals.harness import score as eval_score
 from kong.ghidra.client import GhidraClient, GhidraClientError
 from kong.llm.client import AnthropicClient
+
 console = Console()
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="kong")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
 @click.pass_context
@@ -31,6 +34,15 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     """
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+
+    if ctx.invoked_subcommand is None:
+        print_banner(console)
+        console.print()
+        console.print("Usage: [bold]kong analyze <binary>[/bold]")
+        console.print("       [bold]kong info <binary>[/bold]")
+        console.print("       [bold]kong setup[/bold]")
+        console.print()
+        console.print("Run [bold]kong --help[/bold] for all options.")
 
 
 def _print_final_stats(supervisor: Supervisor, llm_client: AnthropicClient) -> None:
@@ -91,11 +103,17 @@ def analyze(
     )
 
     binary_path = Path(binary).resolve()
-    console.print(f"[bold]Kong v{__version__}[/bold]")
-    console.print(f"Binary: {binary_path}")
-    console.print(f"Output: {config.output.directory}")
-    console.print(f"Formats: {', '.join(config.output.formats)}")
-    console.print()
+
+    print_analyze_header(
+        console,
+        binary_path=str(binary_path),
+        output_dir=str(config.output.directory),
+        formats=config.output.formats,
+    )
+
+    if not check_api_key():
+        print_setup_needed(console)
+        raise SystemExit(1)
 
     if not config.ghidra.install_dir:
         console.print("[red]Ghidra is not installed or not found.[/red]")
@@ -202,6 +220,88 @@ def info(binary: str, ghidra_dir: str | None) -> None:
         console.print(f"  {cls}: {count}")
 
     client.close()
+
+
+@cli.command()
+def setup() -> None:
+    """Guided setup for Kong."""
+    print_banner(console)
+    console.print()
+
+    console.print("[bold]Step 1: Anthropic API Key[/bold]")
+    console.print()
+
+    current_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if current_key:
+        masked = current_key[:7] + "..." + current_key[-4:]
+        console.print(f"  [green]Found:[/green] {masked}")
+    else:
+        console.print("  [yellow]Not set.[/yellow]")
+        console.print()
+        console.print("  Get your key at: [bold]https://console.anthropic.com/settings/keys[/bold]")
+        console.print()
+        key = click.prompt("  Enter your API key", hide_input=True)
+        if not key.startswith("sk-ant-"):
+            console.print("  [red]Invalid key format. Keys start with sk-ant-[/red]")
+            raise SystemExit(1)
+        console.print()
+        console.print("  Add to your shell profile:")
+        console.print(f'  [bold]export ANTHROPIC_API_KEY="{key}"[/bold]')
+        os.environ["ANTHROPIC_API_KEY"] = key
+
+    console.print()
+    console.print("[bold]Step 2: Ghidra[/bold]")
+    console.print()
+
+    ghidra_config = GhidraConfig()
+    if ghidra_config.install_dir:
+        console.print(f"  [green]Found:[/green] {ghidra_config.install_dir}")
+    else:
+        console.print("  [yellow]Not found.[/yellow]")
+        console.print()
+        console.print("  Install Ghidra:")
+        console.print("    [bold]brew install ghidra[/bold]  (macOS)")
+        console.print("    Or download from [bold]https://ghidra-sre.org[/bold]")
+        console.print()
+        console.print("  Then set [bold]GHIDRA_INSTALL_DIR[/bold] to the install path.")
+
+    console.print()
+    all_good = check_api_key() and ghidra_config.install_dir
+    if all_good:
+        console.print("[bold green]All set! Run [bold]kong analyze <binary>[/bold] to get started.[/bold green]")
+    else:
+        console.print("[yellow]Some dependencies are missing. See above for instructions.[/yellow]")
+
+
+@cli.command(name="eval")
+@click.argument("analysis_json", type=click.Path(exists=True, dir_okay=False))
+@click.argument("source_file", type=click.Path(exists=True, dir_okay=False))
+def eval_cmd(analysis_json: str, source_file: str) -> None:
+    """Score a Kong analysis against ground truth source code."""
+    scorecard = eval_score(
+        analysis_path=Path(analysis_json),
+        source_path=Path(source_file),
+    )
+
+    console.print(f"[bold]Binary:[/bold] {scorecard.binary}")
+    console.print(f"[bold]Functions:[/bold] {scorecard.functions_analyzed} analyzed / {scorecard.total_functions} in source")
+    console.print(f"[bold]Symbol Accuracy:[/bold] {scorecard.symbol_accuracy:.1%}")
+    console.print(f"[bold]Type Accuracy:[/bold] {scorecard.type_accuracy:.1%}")
+    console.print()
+
+    console.print("[bold]Per-Function Scores:[/bold]")
+    for pf in scorecard.per_function:
+        pred = pf["predicted_name"]
+        truth = pf["truth_name"]
+        sym = pf["symbol_score"]
+        typ = pf["type_score"]
+        match_indicator = "[green]OK[/green]" if sym >= 0.8 else "[yellow]~~[/yellow]" if sym > 0 else "[red]NO[/red]"
+        console.print(f"  {match_indicator} {pred:30s} -> {truth:20s}  sym={sym:.2f}  type={typ:.2f}")
+
+    console.print()
+    console.print(f"[bold]LLM Calls:[/bold] {scorecard.llm_calls}")
+    console.print(f"[bold]Duration:[/bold] {scorecard.duration_seconds:.1f}s")
+    console.print(f"[bold]Cost:[/bold] ${scorecard.cost_usd:.4f}")
 
 
 def main() -> None:
