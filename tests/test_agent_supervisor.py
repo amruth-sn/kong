@@ -5,9 +5,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from kong.agent.events import EventType, Phase
-from kong.agent.models import FunctionResult
-from kong.agent.models import AnalysisStats
-from kong.agent.supervisor import Supervisor
+from kong.agent.models import AnalysisStats, FunctionResult
+from kong.agent.queue import WorkItem
+from kong.agent.supervisor import HAIKU_MODEL, SONNET_MODEL, Supervisor
 from kong.config import KongConfig, OutputConfig
 from kong.ghidra.types import BinaryInfo, FunctionClassification, FunctionInfo
 
@@ -381,3 +381,46 @@ class TestDecompilationCache:
         assert result == "void foo(void) {}"
         assert 0x1000 in sup._decompilation_cache
         client.get_decompilation.assert_called_once_with(0x1000)
+
+
+class TestBatchAssembly:
+    def test_functions_grouped_by_model(self, tmp_path):
+        client = _make_client()
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+        sup = Supervisor(client, config)
+
+        items = [
+            (WorkItem(function=_func(0x1000 + i * 0x100, f"FUN_{i}", size=64), callees=[]),
+             "decomp", HAIKU_MODEL)
+            for i in range(12)
+        ]
+        items.append(
+            (WorkItem(function=_func(0x5000, "FUN_big", size=1024), callees=[]),
+             "decomp", SONNET_MODEL)
+        )
+
+        batches = sup._assemble_batches(items)
+
+        haiku_batches = [(b, m) for b, m in batches if m == HAIKU_MODEL]
+        sonnet_batches = [(b, m) for b, m in batches if m == SONNET_MODEL]
+
+        assert len(haiku_batches) == 2
+        assert len(haiku_batches[0][0]) == 10
+        assert len(haiku_batches[1][0]) == 2
+        assert len(sonnet_batches) == 1
+        assert len(sonnet_batches[0][0]) == 1
+
+    def test_updated_model_thresholds(self, tmp_path):
+        client = _make_client()
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+        sup = Supervisor(client, config)
+
+        small_item = WorkItem(
+            function=_func(0x1000, "small", size=256), callees=[0x2000, 0x3000],
+        )
+        big_item = WorkItem(
+            function=_func(0x2000, "big", size=1024), callees=[0x3000] * 6,
+        )
+
+        assert sup._pick_model(small_item, "line\n" * 30) == HAIKU_MODEL
+        assert sup._pick_model(big_item, "line\n" * 30) == SONNET_MODEL

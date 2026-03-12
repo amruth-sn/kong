@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 SONNET_MODEL = "claude-sonnet-4-20250514"
 
-MAX_PARALLEL_LLM = 4
-REQUEST_STAGGER_SECONDS = 0.5
+MAX_PARALLEL_LLM = 8
+HAIKU_BATCH_SIZE = 10
+SONNET_BATCH_SIZE = 4
 
 
 class Supervisor:
@@ -216,7 +217,6 @@ class Supervisor:
 
             parallel_items: list[tuple[WorkItem, str, str]] = []
             sequential_items: list[WorkItem] = []
-            analyzer = Analyzer(self.client, self.llm_client) if self.llm_client else None
 
             for item in batch:
                 func = item.function
@@ -233,7 +233,7 @@ class Supervisor:
                     completed_count += 1
                     continue
 
-                if analyzer is None:
+                if self.llm_client is None:
                     result = FunctionResult(
                         address=func.address,
                         original_name=func.name,
@@ -253,11 +253,7 @@ class Supervisor:
                     continue
 
                 model = self._pick_model(item, decompilation)
-                context = analyzer._build_context(
-                    item, self.binary_info, self.results, self.strings,
-                )
-                prompt = analyzer._build_prompt(context)
-                parallel_items.append((item, prompt, model))
+                parallel_items.append((item, decompilation, model))
 
             if parallel_items:
                 self._analyze_parallel(parallel_items, completed_count)
@@ -306,17 +302,40 @@ class Supervisor:
     def _pick_model(self, item: WorkItem, decompilation: str) -> str:
         """Choose Haiku for small/simple functions, Sonnet for complex ones."""
         line_count = decompilation.count("\n")
-        # TODO: calibrate — thresholds are initial guesses, need eval data to tune.
-        if item.function.size <= 200 and len(item.callees) <= 2 and line_count <= 30:
+        if (
+            item.function.size <= 512
+            and len(item.callees) <= 5
+            and line_count <= 60
+        ):
             return HAIKU_MODEL
         return SONNET_MODEL
+
+    def _assemble_batches(
+        self,
+        items: list[tuple[WorkItem, str, str]],
+    ) -> list[tuple[list[tuple[WorkItem, str, str]], str]]:
+        """Group work items into batches by model tier."""
+        haiku_items = [(it, p, m) for it, p, m in items if m == HAIKU_MODEL]
+        sonnet_items = [(it, p, m) for it, p, m in items if m == SONNET_MODEL]
+
+        batches: list[tuple[list[tuple[WorkItem, str, str]], str]] = []
+
+        for i in range(0, len(haiku_items), HAIKU_BATCH_SIZE):
+            chunk = haiku_items[i:i + HAIKU_BATCH_SIZE]
+            batches.append((chunk, HAIKU_MODEL))
+
+        for i in range(0, len(sonnet_items), SONNET_BATCH_SIZE):
+            chunk = sonnet_items[i:i + SONNET_BATCH_SIZE]
+            batches.append((chunk, SONNET_MODEL))
+
+        return batches
 
     def _analyze_parallel(
         self,
         items: list[tuple[WorkItem, str, str]],
         completed_base: int,
     ) -> None:
-        """Send LLM calls in parallel for a batch of non-obfuscated functions."""
+        """Send LLM calls in batches for non-obfuscated functions."""
         for idx, (item, _, model) in enumerate(items):
             func = item.function
             self._emit(Event(
@@ -333,52 +352,91 @@ class Supervisor:
                 },
             ))
 
-        def _call_llm(prompt: str, model: str) -> LLMResponse:
-            assert self.llm_client is not None
-            return self.llm_client.analyze_function(prompt, model=model)
+        batches = self._assemble_batches(items)
+        analyzer = Analyzer(self.client, self.llm_client)
 
-        futures_map: dict[object, WorkItem] = {}
+        def _call_batch(
+            batch_items: list[tuple[WorkItem, str, str]],
+            model: str,
+        ) -> list[tuple[WorkItem, LLMResponse]]:
+            assert self.llm_client is not None
+            contexts = []
+            for work_item, _, _ in batch_items:
+                ctx = analyzer._build_context(
+                    work_item, self.binary_info, self.results, self.strings,
+                )
+                contexts.append(ctx)
+
+            batch_prompt = analyzer.build_batch_prompt(contexts)
+            responses = self.llm_client.analyze_function_batch(
+                batch_prompt, model=model,
+            )
+
+            paired: list[tuple[WorkItem, LLMResponse]] = []
+            if len(responses) == len(batch_items):
+                for (work_item, _, _), resp in zip(batch_items, responses):
+                    paired.append((work_item, resp))
+            else:
+                for work_item, prompt, _ in batch_items:
+                    try:
+                        resp = self.llm_client.analyze_function(prompt, model=model)
+                        paired.append((work_item, resp))
+                    except Exception as e:
+                        paired.append((work_item, LLMResponse(
+                            name="", reasoning=f"Individual fallback failed: {e}",
+                        )))
+            return paired
+
+        all_pairs: list[tuple[WorkItem, LLMResponse]] = []
 
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_LLM) as executor:
-            for i, (item, prompt, model) in enumerate(items):
-                if i > 0 and i % MAX_PARALLEL_LLM == 0:
-                    time.sleep(REQUEST_STAGGER_SECONDS)
-                future = executor.submit(_call_llm, prompt, model)
-                futures_map[future] = item
+            futures = {
+                executor.submit(_call_batch, batch_items, model): (batch_items, model)
+                for batch_items, model in batches
+            }
 
-            for future in as_completed(futures_map):
-                item = futures_map[future]
-                func = item.function
+            for future in as_completed(futures):
                 try:
-                    response = future.result()
-                    sig_applied = self._write_back_response(func.address, response)
-                    result = FunctionResult(
-                        address=func.address,
-                        original_name=func.name,
-                        name=response.name,
-                        signature=response.signature,
-                        confidence=response.confidence,
-                        classification=response.classification,
-                        comments=response.comments,
-                        reasoning=response.reasoning,
-                        llm_calls=1,
-                        signature_applied=sig_applied,
-                        struct_proposals=response.struct_proposals,
-                    )
+                    pairs = future.result()
+                    all_pairs.extend(pairs)
                 except Exception as e:
-                    result = FunctionResult(
-                        address=func.address,
-                        original_name=func.name,
-                        error=str(e),
-                    )
-                    self._emit(Event(
-                        type=EventType.FUNCTION_ERROR,
-                        phase=Phase.ANALYSIS,
-                        message=f"Error analyzing {func.name}: {e}",
-                        data={"address": func.address, "error": str(e)},
-                    ))
+                    batch_items, model = futures[future]
+                    for work_item, _, _ in batch_items:
+                        all_pairs.append((work_item, LLMResponse(
+                            name="", reasoning=f"Batch call failed: {e}",
+                        )))
 
-                self._record_analysis_result(func, result)
+        for work_item, response in all_pairs:
+            func = work_item.function
+            if response.name:
+                sig_applied = self._write_back_response(func.address, response)
+                result = FunctionResult(
+                    address=func.address,
+                    original_name=func.name,
+                    name=response.name,
+                    signature=response.signature,
+                    confidence=response.confidence,
+                    classification=response.classification,
+                    comments=response.comments,
+                    reasoning=response.reasoning,
+                    llm_calls=1,
+                    signature_applied=sig_applied,
+                    struct_proposals=response.struct_proposals,
+                )
+            else:
+                result = FunctionResult(
+                    address=func.address,
+                    original_name=func.name,
+                    error=response.reasoning or "Empty response from LLM",
+                )
+                self._emit(Event(
+                    type=EventType.FUNCTION_ERROR,
+                    phase=Phase.ANALYSIS,
+                    message=f"Error analyzing {func.name}: {response.reasoning}",
+                    data={"address": func.address, "error": response.reasoning},
+                ))
+
+            self._record_analysis_result(func, result)
 
     def _analyze_function_sequential(self, item: WorkItem) -> FunctionResult:
         """Analyze a single function sequentially (used for obfuscated functions)."""
