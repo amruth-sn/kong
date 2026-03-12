@@ -67,6 +67,12 @@ class Supervisor:
         self._synthesis_result: SynthesisResult | None = None
         self._listeners: list[EventCallback] = []
         self._paused: bool = False
+        self._decompilation_cache: dict[int, str] = {}
+
+    def _get_decompilation(self, addr: int) -> str:
+        if addr not in self._decompilation_cache:
+            self._decompilation_cache[addr] = self.client.get_decompilation(addr)
+        return self._decompilation_cache[addr]
 
     def on_event(self, callback: EventCallback) -> None:
         """Register an event listener."""
@@ -239,7 +245,7 @@ class Supervisor:
                     completed_count += 1
                     continue
 
-                decompilation = self.client.get_decompilation(func.address)
+                decompilation = self._get_decompilation(func.address)
                 techniques = classify_obfuscation(decompilation)
 
                 if techniques:
@@ -635,7 +641,7 @@ class Supervisor:
         for addr, result in self.results.items():
             if result.skipped or result.error:
                 continue
-            decomp = self.client.get_decompilation(addr)
+            decomp = self._get_decompilation(addr)
             if decomp:
                 decompilations[addr] = normalize(decomp)
 
@@ -722,7 +728,7 @@ class Supervisor:
         ]
         decompilations: dict[int, str] = {}
         for addr in exportable_addrs:
-            decomp = self.client.get_decompilation(addr)
+            decomp = self._get_decompilation(addr)
             if decomp:
                 decompilations[addr] = normalize(decomp)
 

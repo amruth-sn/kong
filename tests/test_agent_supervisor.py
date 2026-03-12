@@ -358,3 +358,26 @@ class TestSupervisorSynthesis:
         ]
         assert len(synthesis_completes) == 1
         assert "skipped" in synthesis_completes[0].message.lower()
+
+
+class TestDecompilationCache:
+    def test_cached_decompilation_avoids_redundant_ghidra_calls(self, tmp_path):
+        client = _make_client(functions=[_func(0x1000, "FUN_1000")])
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+        sup = Supervisor(client, config)
+        sup._decompilation_cache[0x1000] = "cached code"
+
+        result = sup._get_decompilation(0x1000)
+        assert result == "cached code"
+        client.get_decompilation.assert_not_called()
+
+    def test_uncached_decompilation_calls_ghidra_and_caches(self, tmp_path):
+        client = _make_client(functions=[_func(0x1000, "FUN_1000")])
+        client.get_decompilation.return_value = "void foo(void) {}"
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+        sup = Supervisor(client, config)
+
+        result = sup._get_decompilation(0x1000)
+        assert result == "void foo(void) {}"
+        assert 0x1000 in sup._decompilation_cache
+        client.get_decompilation.assert_called_once_with(0x1000)
