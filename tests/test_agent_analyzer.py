@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 from kong.agent.analyzer import (
@@ -383,3 +384,28 @@ class TestBuildBatchPrompt:
         assert "func_0" in prompt
         assert "func_2" in prompt
         assert "0x00001000" in prompt
+
+
+class TestParseBatchJson:
+    def test_parses_json_array(self) -> None:
+        raw = json.dumps([
+            {"address": "0x1000", "name": "foo", "signature": "void foo(void)",
+             "confidence": 85, "classification": "utility", "comments": "", "reasoning": ""},
+            {"address": "0x2000", "name": "bar", "signature": "int bar(int x)",
+             "confidence": 70, "classification": "math", "comments": "", "reasoning": ""},
+        ])
+        results = Analyzer.parse_llm_json_batch(raw)
+        assert len(results) == 2
+        assert results[0].name == "foo"
+        assert results[1].name == "bar"
+        assert results[0].confidence == 85
+
+    def test_handles_markdown_fences(self) -> None:
+        raw = '```json\n[{"address": "0x1000", "name": "test", "confidence": 50}]\n```'
+        results = Analyzer.parse_llm_json_batch(raw)
+        assert len(results) == 1
+        assert results[0].name == "test"
+
+    def test_returns_empty_on_parse_failure(self) -> None:
+        results = Analyzer.parse_llm_json_batch("not json at all")
+        assert results == []

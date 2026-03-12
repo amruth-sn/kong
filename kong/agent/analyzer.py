@@ -496,3 +496,65 @@ class Analyzer:
             struct_proposals=struct_proposals,
             raw=raw,
         )
+
+    @staticmethod
+    def parse_llm_json_batch(raw: str) -> list[LLMResponse]:
+        text = raw.strip()
+
+        if "```json" in text:
+            start = text.index("```json") + 7
+            end = text.index("```", start)
+            text = text[start:end].strip()
+        elif "```" in text:
+            start = text.index("```") + 3
+            end = text.index("```", start)
+            text = text[start:end].strip()
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse batch LLM response: %s", raw[:200])
+            return []
+
+        if not isinstance(data, list):
+            single = Analyzer.parse_llm_json(raw)
+            return [single] if single.name else []
+
+        results: list[LLMResponse] = []
+        for entry in data:
+            struct_proposals = []
+            for sp in entry.get("struct_proposals", []):
+                if not sp.get("name") or not sp.get("total_size"):
+                    continue
+                try:
+                    total_size = int(sp["total_size"])
+                except (ValueError, TypeError):
+                    continue
+                fields = [
+                    StructFieldProposal(
+                        name=f.get("name", f"field_{i}"),
+                        data_type=f.get("data_type", "undefined"),
+                        offset=int(f.get("offset", 0)),
+                        size=int(f.get("size", 4)),
+                    )
+                    for i, f in enumerate(sp.get("fields", []))
+                ]
+                struct_proposals.append(StructProposal(
+                    name=sp["name"],
+                    total_size=total_size,
+                    fields=fields,
+                    used_by_param=sp.get("used_by_param", ""),
+                ))
+
+            results.append(LLMResponse(
+                name=entry.get("name", ""),
+                signature=entry.get("signature", ""),
+                confidence=entry.get("confidence", 0),
+                classification=entry.get("classification", ""),
+                comments=entry.get("comments", ""),
+                reasoning=entry.get("reasoning", ""),
+                struct_proposals=struct_proposals,
+                raw=raw,
+            ))
+
+        return results
