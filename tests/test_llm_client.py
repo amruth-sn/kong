@@ -5,12 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from kong.llm.client import (
-    AnthropicClient,
-    ModelTokenUsage,
-    TokenUsage,
-    _PRICING,
-)
+from kong.llm.client import AnthropicClient
+from kong.llm.usage import ModelTokenUsage, TokenUsage, _PRICING
 
 
 def _mock_message(text: str, input_tokens: int = 100, output_tokens: int = 50):

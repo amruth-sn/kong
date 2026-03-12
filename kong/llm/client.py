@@ -15,7 +15,7 @@ import anthropic
 from kong.agent.analyzer import Analyzer, LLMResponse
 from kong.agent.prompts import BATCH_OUTPUT_SCHEMA, BATCH_SYSTEM_PROMPT, OUTPUT_SCHEMA, SYSTEM_PROMPT
 from kong.llm.tools import ToolExecutor
-from kong.llm.usage import ModelTokenUsage, TokenUsage, _PRICING
+from kong.llm.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
 
