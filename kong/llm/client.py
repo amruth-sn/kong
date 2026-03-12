@@ -8,75 +8,18 @@ Tracks token usage and cost per call.  Supports both simple
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 import anthropic
 
 from kong.agent.analyzer import Analyzer, LLMResponse
-from kong.agent.prompts import OUTPUT_SCHEMA, SYSTEM_PROMPT
+from kong.agent.prompts import BATCH_OUTPUT_SCHEMA, BATCH_SYSTEM_PROMPT, OUTPUT_SCHEMA, SYSTEM_PROMPT
 from kong.llm.tools import ToolExecutor
+from kong.llm.usage import ModelTokenUsage, TokenUsage, _PRICING
 
 logger = logging.getLogger(__name__)
 
-# Pricing per million tokens (input/output) by model.
-# Source: https://docs.anthropic.com/en/docs/about-claude/models
-_PRICING: dict[str, tuple[float, float]] = {
-    "claude-sonnet-4-20250514": (3.0, 15.0),
-    "claude-haiku-4-5-20251001": (1.0, 5.0),
-}
-
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
-
-
-@dataclass
-class ModelTokenUsage:
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_creation_tokens: int = 0
-    cache_read_tokens: int = 0
-    calls: int = 0
-
-    def cost_usd(self, model: str) -> float:
-        input_rate, output_rate = _PRICING.get(model, (3.0, 15.0))
-        cache_write_rate = input_rate * 1.25
-        cache_read_rate = input_rate * 0.10
-        return (
-            (self.input_tokens / 1_000_000) * input_rate
-            + (self.output_tokens / 1_000_000) * output_rate
-            + (self.cache_creation_tokens / 1_000_000) * cache_write_rate
-            + (self.cache_read_tokens / 1_000_000) * cache_read_rate
-        )
-
-
-@dataclass
-class TokenUsage:
-    by_model: dict[str, ModelTokenUsage] = field(default_factory=dict)
-
-    def _get(self, model: str) -> ModelTokenUsage:
-        if model not in self.by_model:
-            self.by_model[model] = ModelTokenUsage()
-        return self.by_model[model]
-
-    @property
-    def input_tokens(self) -> int:
-        return sum(m.input_tokens for m in self.by_model.values())
-
-    @property
-    def output_tokens(self) -> int:
-        return sum(m.output_tokens for m in self.by_model.values())
-
-    @property
-    def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
-
-    @property
-    def calls(self) -> int:
-        return sum(m.calls for m in self.by_model.values())
-
-    @property
-    def total_cost_usd(self) -> float:
-        return sum(m.cost_usd(model) for model, m in self.by_model.items())
 
 
 class AnthropicClient:
@@ -129,6 +72,31 @@ class AnthropicClient:
         response.output_tokens = message.usage.output_tokens
         response.raw = raw_text
         return response
+
+    def analyze_function_batch(self, prompt: str, *, model: str | None = None) -> list[LLMResponse]:
+        """Send a batch analysis prompt and return parsed list of responses."""
+        effective_model = model or self.model
+        message = self._client.messages.create(
+            model=effective_model,
+            max_tokens=self.max_tokens * 2,
+            system=[{
+                "type": "text",
+                "text": f"{BATCH_SYSTEM_PROMPT}\n\n{BATCH_OUTPUT_SCHEMA}",
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        raw_text = self._extract_text(message)
+        self._record_usage(message, effective_model)
+
+        responses = Analyzer.parse_llm_json_batch(raw_text)
+        for resp in responses:
+            resp.input_tokens = message.usage.input_tokens
+            resp.output_tokens = message.usage.output_tokens
+        return responses
 
     def analyze_with_tools(
         self,

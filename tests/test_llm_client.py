@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 from kong.llm.client import (
@@ -206,3 +207,62 @@ class TestPricingValues:
         sonnet_in, sonnet_out = _PRICING["claude-sonnet-4-20250514"]
         assert haiku_in < sonnet_in
         assert haiku_out < sonnet_out
+
+
+class TestAnalyzeFunctionBatch:
+    def test_batch_returns_list_of_responses(self) -> None:
+        mock_anthropic = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(type="text", text=json.dumps([
+            {"address": "0x1000", "name": "foo", "confidence": 80},
+            {"address": "0x2000", "name": "bar", "confidence": 70},
+        ]))]
+        mock_message.usage = MagicMock(
+            input_tokens=100, output_tokens=50,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+        )
+        mock_anthropic.messages.create.return_value = mock_message
+
+        client = AnthropicClient(api_key="test")
+        client._client = mock_anthropic
+        results = client.analyze_function_batch("batch prompt", model="claude-haiku-4-5-20251001")
+
+        assert len(results) == 2
+        assert results[0].name == "foo"
+        assert results[1].name == "bar"
+
+    def test_batch_uses_batch_system_prompt(self) -> None:
+        mock_anthropic = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(type="text", text='[{"name": "f", "confidence": 50}]')]
+        mock_message.usage = MagicMock(
+            input_tokens=100, output_tokens=50,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+        )
+        mock_anthropic.messages.create.return_value = mock_message
+
+        client = AnthropicClient(api_key="test")
+        client._client = mock_anthropic
+        client.analyze_function_batch("prompt")
+
+        call_kwargs = mock_anthropic.messages.create.call_args
+        system_text = call_kwargs.kwargs["system"][0]["text"]
+        assert "multiple" in system_text.lower() or "batch" in system_text.lower()
+
+    def test_batch_records_usage(self) -> None:
+        mock_anthropic = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(type="text", text='[{"name": "f", "confidence": 50}]')]
+        mock_message.usage = MagicMock(
+            input_tokens=500, output_tokens=200,
+            cache_creation_input_tokens=100, cache_read_input_tokens=50,
+        )
+        mock_anthropic.messages.create.return_value = mock_message
+
+        client = AnthropicClient(api_key="test")
+        client._client = mock_anthropic
+        client.analyze_function_batch("prompt")
+
+        assert client.usage.input_tokens == 500
+        assert client.usage.output_tokens == 200
+        assert client.usage.calls == 1

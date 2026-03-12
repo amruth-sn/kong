@@ -23,7 +23,7 @@ from kong.export.source import ExportData, export_source
 from kong.export.structured import export_json
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
-from kong.llm.client import TokenUsage
+from kong.llm.usage import TokenUsage
 from kong.normalizer.syntactic import normalize
 from kong.synthesis.semantic import SemanticSynthesizer, SynthesisResult
 

@@ -39,6 +39,8 @@ class LLMClient(Protocol):
         max_rounds: int = 10,
     ) -> LLMResponse: ...
 
+    def analyze_function_batch(self, prompt: str, *, model: str | None = None) -> list[LLMResponse]: ...
+
 
 @dataclass
 class LLMResponse:
