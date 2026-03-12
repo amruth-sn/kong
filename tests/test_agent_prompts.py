@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kong.agent.prompts import OUTPUT_SCHEMA, SYSTEM_PROMPT
+from kong.agent.prompts import BATCH_OUTPUT_SCHEMA, BATCH_SYSTEM_PROMPT, OUTPUT_SCHEMA, SYSTEM_PROMPT
 
 
 class TestPrompts:
@@ -23,3 +23,12 @@ class TestPrompts:
     def test_output_schema_has_confidence_guidelines(self):
         assert "90-100" in OUTPUT_SCHEMA
         assert "0-29" in OUTPUT_SCHEMA
+
+
+class TestBatchPrompts:
+    def test_batch_output_schema_is_json_array(self) -> None:
+        assert '"address"' in BATCH_OUTPUT_SCHEMA
+        assert "[" in BATCH_OUTPUT_SCHEMA
+
+    def test_batch_system_prompt_mentions_multiple(self) -> None:
+        assert "multiple" in BATCH_SYSTEM_PROMPT.lower() or "batch" in BATCH_SYSTEM_PROMPT.lower()
