@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from kong.agent.analyzer import LLMResponse
 from kong.agent.events import EventType, Phase
 from kong.agent.models import AnalysisStats, FunctionResult
 from kong.agent.queue import WorkItem
@@ -457,3 +458,36 @@ class TestBatchedCleanup:
         assert mock_llm.analyze_function_batch.called
         assert sup.results[0x1000].name == "init_module"
         assert sup.results[0x1000].confidence == 80
+
+
+class TestBatchedPipelineIntegration:
+    def test_full_pipeline_uses_batch_calls(self, tmp_path):
+        funcs = [_func(0x1000 + i * 0x100, f"FUN_{i}", size=64) for i in range(5)]
+        client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void f(void) { return; }"
+        client.get_xrefs_from.return_value = []
+        client.get_function_info.return_value = funcs[0]
+        client.list_custom_types.return_value = []
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+
+        mock_llm = MagicMock()
+
+        def batch_response(prompt: str, **kwargs: object) -> list[LLMResponse]:
+            count = prompt.count("=== Function")
+            return [
+                LLMResponse(name=f"func_{i}", confidence=80, classification="utility")
+                for i in range(count)
+            ]
+
+        mock_llm.analyze_function_batch.side_effect = batch_response
+
+        mock_llm.analyze_function.return_value = LLMResponse(
+            name="", raw='{"globals":{},"structs":[],"name_refinements":{}}',
+        )
+
+        sup = Supervisor(client, config, llm_client=mock_llm)
+        sup.run()
+
+        assert mock_llm.analyze_function_batch.call_count > 0
+        named = [r for r in sup.results.values() if r.name and not r.skipped]
+        assert len(named) == 5
