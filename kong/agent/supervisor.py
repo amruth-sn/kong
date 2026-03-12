@@ -604,6 +604,7 @@ class Supervisor:
             known_types = self.client.list_custom_types()
             analyzer = Analyzer(self.client, self.llm_client)
 
+            reanalyze_items: list[tuple[WorkItem, str, str]] = []
             for addr in reanalyze_addrs:
                 if self._paused:
                     continue
@@ -628,42 +629,75 @@ class Supervisor:
                     callees=self.triage_result.call_graph.callees.get(addr, []) if self.triage_result else [],
                 )
 
-                try:
-                    new_result = analyzer.analyze(
-                        item,
-                        binary_info=self.binary_info,
-                        known_results=self.results,
-                        strings=self.strings,
-                        known_types=known_types,
-                    )
-                except Exception as e:
-                    self._emit(Event(
-                        type=EventType.FUNCTION_ERROR,
-                        phase=Phase.CLEANUP,
-                        message=f"Error re-analyzing {func_name}: {e}",
-                        data={"address": addr, "error": str(e)},
-                    ))
-                    continue
+                decompilation = self._get_decompilation(addr)
+                model = self._pick_model(item, decompilation)
+                reanalyze_items.append((item, decompilation, model))
 
-                if new_result.confidence > (old_result.confidence if old_result else 0):
-                    self.results[addr] = new_result
-                    reanalyzed += 1
+            if reanalyze_items:
+                batches = self._assemble_batches(reanalyze_items)
 
-                    self._emit(Event(
-                        type=EventType.FUNCTION_COMPLETE,
-                        phase=Phase.CLEANUP,
-                        message=(
-                            f"0x{addr:08x} → {new_result.name} "
-                            f"(confidence: {new_result.confidence}%, "
-                            f"was {old_result.confidence if old_result else 0}%)"
-                        ),
-                        data={
-                            "address": addr,
-                            "name": new_result.name,
-                            "confidence": new_result.confidence,
-                            "previous_confidence": old_result.confidence if old_result else 0,
-                        },
-                    ))
+                for batch_items, model in batches:
+                    contexts = []
+                    for work_item, _, _ in batch_items:
+                        ctx = analyzer._build_context(
+                            work_item, self.binary_info, self.results,
+                            self.strings, known_types,
+                        )
+                        contexts.append(ctx)
+
+                    batch_prompt = analyzer.build_batch_prompt(contexts)
+                    try:
+                        responses = self.llm_client.analyze_function_batch(
+                            batch_prompt, model=model,
+                        )
+                    except Exception as e:
+                        logger.warning("Batch cleanup call failed: %s", e)
+                        continue
+
+                    if len(responses) != len(batch_items):
+                        continue
+
+                    for (work_item, _, _), response in zip(batch_items, responses):
+                        addr = work_item.function.address
+                        old_result = self.results.get(addr)
+
+                        if not response.name:
+                            continue
+
+                        old_confidence = old_result.confidence if old_result else 0
+
+                        if response.confidence > old_confidence:
+                            self._write_back_response(addr, response)
+                            new_result = FunctionResult(
+                                address=addr,
+                                original_name=work_item.function.name,
+                                name=response.name,
+                                signature=response.signature,
+                                confidence=response.confidence,
+                                classification=response.classification,
+                                comments=response.comments,
+                                reasoning=response.reasoning,
+                                llm_calls=1,
+                                struct_proposals=response.struct_proposals,
+                            )
+                            self.results[addr] = new_result
+                            reanalyzed += 1
+
+                            self._emit(Event(
+                                type=EventType.FUNCTION_COMPLETE,
+                                phase=Phase.CLEANUP,
+                                message=(
+                                    f"0x{addr:08x} → {new_result.name} "
+                                    f"(confidence: {new_result.confidence}%, "
+                                    f"was {old_confidence}%)"
+                                ),
+                                data={
+                                    "address": addr,
+                                    "name": new_result.name,
+                                    "confidence": new_result.confidence,
+                                    "previous_confidence": old_confidence,
+                                },
+                            ))
 
         self._emit(Event(
             type=EventType.PHASE_COMPLETE,

@@ -424,3 +424,36 @@ class TestBatchAssembly:
 
         assert sup._pick_model(small_item, "line\n" * 30) == HAIKU_MODEL
         assert sup._pick_model(big_item, "line\n" * 30) == SONNET_MODEL
+
+
+class TestBatchedCleanup:
+    def test_cleanup_uses_batch_call(self, tmp_path):
+        from kong.agent.analyzer import LLMResponse
+
+        funcs = [_func(0x1000, "FUN_1000", size=64)]
+        client = _make_client(functions=funcs)
+        client.get_decompilation.return_value = "void f(void) { return; }"
+        client.list_custom_types.return_value = []
+        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
+
+        mock_llm = MagicMock()
+        mock_llm.analyze_function_batch.return_value = [
+            LLMResponse(name="init_module", confidence=80, classification="init"),
+        ]
+
+        sup = Supervisor(client, config, llm_client=mock_llm)
+        sup.results[0x1000] = FunctionResult(
+            address=0x1000, original_name="FUN_1000",
+            name="maybe_init", confidence=30, llm_calls=1,
+        )
+        sup.binary_info = client.get_binary_info()
+        sup.functions = funcs
+        sup.triage_result = MagicMock()
+        sup.triage_result.call_graph.callers = {}
+        sup.triage_result.call_graph.callees = {}
+
+        sup._run_cleanup()
+
+        assert mock_llm.analyze_function_batch.called
+        assert sup.results[0x1000].name == "init_module"
+        assert sup.results[0x1000].confidence == 80

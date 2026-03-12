@@ -640,17 +640,17 @@ class TestSupervisorCleanupIntegration:
         client.get_xrefs_from.return_value = []
         client.list_custom_types.return_value = []
 
-        call_count = 0
+        batch_call_count = 0
 
-        def varying_response(prompt: str, **kwargs: object) -> LLMResponse:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return LLMResponse(name="unknown_func", confidence=30)
-            return LLMResponse(name="decode_buffer", confidence=70)
+        def varying_batch_response(prompt: str, **kwargs: object) -> list[LLMResponse]:
+            nonlocal batch_call_count
+            batch_call_count += 1
+            if batch_call_count == 1:
+                return [LLMResponse(name="unknown_func", confidence=30)]
+            return [LLMResponse(name="decode_buffer", confidence=70)]
 
         llm = MagicMock()
-        llm.analyze_function.side_effect = varying_response
+        llm.analyze_function_batch.side_effect = varying_batch_response
 
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
         sup = Supervisor(client, config, llm_client=llm)
