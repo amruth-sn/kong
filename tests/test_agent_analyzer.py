@@ -349,3 +349,37 @@ class TestNormalizerIntegration:
         assert len(ctx.callee_snippets) == 1
         assert "undefined4" not in ctx.callee_snippets[0].snippet
         assert "- 3" in ctx.callee_snippets[0].snippet
+
+
+class TestBuildBatchPrompt:
+    def test_batch_prompt_contains_all_functions(self) -> None:
+        """Batch prompt should contain separator and decompilation for each context."""
+        client = MagicMock()
+        llm = MagicMock()
+        analyzer = Analyzer(client, llm)
+
+        binary_info = BinaryInfo(
+            arch="x86", format="ELF", endianness="little",
+            word_size=8, compiler="gcc", name="test",
+        )
+
+        contexts = []
+        for i in range(3):
+            ctx = AnalysisContext(
+                function=FunctionInfo(
+                    address=0x1000 + i * 0x100,
+                    name=f"FUN_{0x1000 + i * 0x100:08x}",
+                    size=64,
+                ),
+                decompilation=f"void func_{i}(void) {{ return; }}",
+                binary_info=binary_info,
+            )
+            contexts.append(ctx)
+
+        prompt = analyzer.build_batch_prompt(contexts)
+        assert "=== Function 1" in prompt
+        assert "=== Function 2" in prompt
+        assert "=== Function 3" in prompt
+        assert "func_0" in prompt
+        assert "func_2" in prompt
+        assert "0x00001000" in prompt

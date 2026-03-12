@@ -352,6 +352,54 @@ class Analyzer:
 
         return "\n".join(parts)
 
+    def build_batch_prompt(self, contexts: list[AnalysisContext]) -> str:
+        """Build a single LLM prompt combining multiple function contexts for batch analysis."""
+        if not contexts:
+            return ""
+
+        first = contexts[0]
+        parts = []
+
+        parts.append(
+            f"Binary: {first.binary_info.arch} {first.binary_info.format} "
+            f"({first.binary_info.compiler})"
+        )
+        parts.append("")
+        parts.append(f"Analyze the following {len(contexts)} functions.")
+
+        for i, context in enumerate(contexts, start=1):
+            parts.append("")
+            parts.append(
+                f"=== Function {i}: {context.function.name} "
+                f"(0x{context.function.address:08x}) ==="
+            )
+            parts.append(f"Size: {context.function.size} bytes")
+            parts.append("")
+            parts.append("### Decompilation")
+            parts.append("```c")
+            parts.append(context.decompilation)
+            parts.append("```")
+
+            if context.referenced_strings:
+                parts.append("")
+                parts.append("### Referenced Strings")
+                for s in context.referenced_strings:
+                    parts.append(f'- "{s}"')
+
+            if context.callee_snippets:
+                parts.append("")
+                parts.append("### Known Callees")
+                for cs in context.callee_snippets:
+                    parts.append(f"- 0x{cs.address:08x}: {cs.name}")
+
+        if first.known_functions:
+            parts.append("")
+            parts.append("### Already Identified Functions")
+            for addr, name in sorted(first.known_functions.items()):
+                parts.append(f"- 0x{addr:08x}: {name}")
+
+        return "\n".join(parts)
+
     def _write_back(self, addr: int, response: LLMResponse) -> bool:
         """Write analysis results back to Ghidra.
 
