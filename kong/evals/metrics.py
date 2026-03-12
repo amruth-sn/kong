@@ -5,6 +5,41 @@ from __future__ import annotations
 import re
 
 
+_SYNONYM_GROUPS: list[set[str]] = [
+    {"search", "find", "lookup"},
+    {"node", "entry", "element"},
+    {"buffer", "buf"},
+    {"encode", "encrypt"},
+    {"decode", "decrypt"},
+    {"delete", "remove"},
+    {"create", "make", "new", "alloc"},
+    {"insert", "add", "push"},
+    {"string", "str"},
+    {"print", "display", "show"},
+    {"count", "num", "size", "length"},
+]
+
+_SYNONYM_MAP: dict[str, set[str]] = {}
+for _group in _SYNONYM_GROUPS:
+    for _word in _group:
+        _SYNONYM_MAP[_word] = _group
+
+_NOISE_WORDS = {"or", "from", "the", "a", "an", "of", "to", "and", "is", "in"}
+
+_TYPE_ALIASES: dict[str, str] = {
+    "uint": "int",
+    "byte": "char",
+    "undefined4": "int",
+    "undefined8": "long",
+    "undefined2": "short",
+    "undefined1": "char",
+    "bool": "int",
+    "dword": "int",
+    "qword": "long",
+    "word": "short",
+}
+
+
 def _normalize_name(name: str) -> list[str]:
     """Split camelCase/snake_case/PascalCase into lowercase word tokens."""
     parts = name.replace("_", " ").strip().split()
@@ -12,14 +47,40 @@ def _normalize_name(name: str) -> list[str]:
     for part in parts:
         splits = re.sub(r"([a-z])([A-Z])", r"\1 \2", part).split()
         tokens.extend(s.lower() for s in splits if s)
-    return tokens
+    return [t for t in tokens if t not in _NOISE_WORDS]
+
+
+def _is_synonym(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    group = _SYNONYM_MAP.get(a)
+    return group is not None and b in group
+
+
+def _synonym_recall(pred_set: set[str], truth_set: set[str]) -> float:
+    """Fraction of truth tokens matched by a pred token (exact or synonym)."""
+    if not truth_set:
+        return 0.0
+    matched = 0
+    for t in truth_set:
+        if any(_is_synonym(t, p) for p in pred_set):
+            matched += 1
+    return matched / len(truth_set)
 
 
 def symbol_accuracy(predicted: str, truth: str) -> float:
     """Score predicted symbol name against ground truth.
 
-    Returns 1.0 for exact match, 0.8 for same words different order,
-    Jaccard-based (capped at 0.6) for partial overlap, 0.0 for no overlap.
+    Recall-weighted: measures how well the prediction captures the ground
+    truth concepts.  Extra descriptive words in the prediction are not
+    penalized heavily — they add context in RE output.
+
+    Returns:
+        1.0  exact string match
+        0.9  same word set, different order
+        0.8  all truth words present (superset) — exact or synonym
+        recall * 0.7  partial overlap, scaled by truth coverage
+        0.0  no overlap even after synonym expansion
     """
     if predicted == truth:
         return 1.0
@@ -34,23 +95,29 @@ def symbol_accuracy(predicted: str, truth: str) -> float:
     truth_set = set(truth_tokens)
 
     if pred_set == truth_set:
+        return 0.9
+
+    recall = _synonym_recall(pred_set, truth_set)
+
+    if recall >= 1.0:
         return 0.8
-
-    intersection = pred_set & truth_set
-    if not intersection:
-        return 0.0
-
-    union = pred_set | truth_set
-    jaccard = len(intersection) / len(union)
-    return min(jaccard, 0.6)
+    if recall > 0.0:
+        return recall * 0.7
+    return 0.0
 
 
-def _strip_qualifiers(type_str: str) -> str:
-    """Remove const/unsigned/signed qualifiers from a type string."""
+def _normalize_type(type_str: str) -> str:
+    """Normalize a C type string: strip qualifiers and resolve Ghidra aliases."""
     stripped = type_str
     for qualifier in ("const", "unsigned", "signed"):
         stripped = stripped.replace(qualifier, "")
-    return " ".join(stripped.split())
+    stripped = " ".join(stripped.split())
+
+    base = stripped.rstrip("*").rstrip()
+    stars = stripped[len(base):]
+
+    resolved = _TYPE_ALIASES.get(base, base)
+    return (resolved + stars).strip()
 
 
 def _parse_signature(sig: str) -> tuple[str, list[str]]:
@@ -87,6 +154,8 @@ def type_accuracy(predicted_sig: str, truth_sig: str) -> float:
     Exact match: 1.0. Otherwise scored by components:
     return type match (0.4), param count match (0.3),
     individual param type matches (up to 0.3).
+
+    Types are normalized through Ghidra alias resolution before comparison.
     """
     if predicted_sig == truth_sig:
         return 1.0
@@ -96,7 +165,7 @@ def type_accuracy(predicted_sig: str, truth_sig: str) -> float:
 
     score = 0.0
 
-    if _strip_qualifiers(pred_ret) == _strip_qualifiers(truth_ret):
+    if _normalize_type(pred_ret) == _normalize_type(truth_ret):
         score += 0.4
 
     if len(pred_params) == len(truth_params):
@@ -105,7 +174,7 @@ def type_accuracy(predicted_sig: str, truth_sig: str) -> float:
     if pred_params and truth_params:
         match_count = sum(
             1 for p, t in zip(pred_params, truth_params)
-            if _strip_qualifiers(p) == _strip_qualifiers(t)
+            if _normalize_type(p) == _normalize_type(t)
         )
         max_params = max(len(pred_params), len(truth_params))
         score += 0.3 * (match_count / max_params)

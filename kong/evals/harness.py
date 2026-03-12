@@ -30,8 +30,8 @@ class Scorecard:
 
 _FUNC_PATTERN = re.compile(
     r"^(?:static\s+)?"
-    r"([\w\s\*]+?)"
-    r"\s+(\w+)\s*"
+    r"((?:\w+[\s*]+)+)"
+    r"(\w+)\s*"
     r"\(([^)]*)\)\s*\{",
     re.MULTILINE,
 )

@@ -9,7 +9,9 @@ import pytest
 
 from kong.evals.metrics import (
     _normalize_name,
+    _normalize_type,
     _parse_signature,
+    _synonym_recall,
     overall_score,
     symbol_accuracy,
     type_accuracy,
@@ -41,6 +43,26 @@ class TestNormalizeName:
         tokens = _normalize_name("SSL")
         assert tokens == ["ssl"]
 
+    def test_noise_words_removed(self) -> None:
+        assert _normalize_name("remove_from_list") == ["remove", "list"]
+        assert _normalize_name("create_or_update") == ["create", "update"]
+
+
+class TestSynonymRecall:
+    def test_exact_overlap(self) -> None:
+        assert _synonym_recall({"insert", "node"}, {"insert", "node"}) == 1.0
+
+    def test_synonym_match(self) -> None:
+        assert _synonym_recall({"search", "list"}, {"find"}) == 1.0
+        assert _synonym_recall({"entry"}, {"node"}) == 1.0
+
+    def test_no_overlap(self) -> None:
+        assert _synonym_recall({"foo"}, {"bar"}) == 0.0
+
+    def test_partial(self) -> None:
+        result = _synonym_recall({"xor"}, {"xor", "encode"})
+        assert result == 0.5
+
 
 class TestSymbolAccuracy:
     def test_exact_match(self) -> None:
@@ -48,11 +70,23 @@ class TestSymbolAccuracy:
 
     def test_word_reorder(self) -> None:
         result = symbol_accuracy("init_key", "key_init")
-        assert 0.7 <= result <= 0.9
+        assert result == 0.9
+
+    def test_superset_full_recall(self) -> None:
+        result = symbol_accuracy("linked_list_insert_head", "insert")
+        assert result == 0.8
+
+    def test_superset_with_synonyms(self) -> None:
+        result = symbol_accuracy("remove_entry_from_list", "remove_node")
+        assert result == 0.8
+
+    def test_synonym_only(self) -> None:
+        result = symbol_accuracy("linked_list_search", "find")
+        assert result == 0.8
 
     def test_partial_overlap(self) -> None:
-        result = symbol_accuracy("init_key_value", "init_buffer_size")
-        assert 0.1 <= result <= 0.6
+        result = symbol_accuracy("xor_buffer", "xor_encode")
+        assert 0.2 <= result <= 0.5
 
     def test_no_match(self) -> None:
         assert symbol_accuracy("foo", "bar") == 0.0
@@ -60,6 +94,26 @@ class TestSymbolAccuracy:
     def test_case_insensitive(self) -> None:
         result = symbol_accuracy("InitKey", "init_key")
         assert result >= 0.8
+
+
+class TestNormalizeType:
+    def test_ghidra_uint(self) -> None:
+        assert _normalize_type("uint") == "int"
+
+    def test_ghidra_byte_pointer(self) -> None:
+        assert _normalize_type("byte *") == "char *"
+
+    def test_ghidra_undefined4(self) -> None:
+        assert _normalize_type("undefined4") == "int"
+
+    def test_unsigned_int_stripped(self) -> None:
+        assert _normalize_type("unsigned int") == "int"
+
+    def test_plain_type_unchanged(self) -> None:
+        assert _normalize_type("void") == "void"
+
+    def test_pointer_preserved(self) -> None:
+        assert _normalize_type("int*") == "int*"
 
 
 class TestParseSignature:
@@ -114,6 +168,20 @@ class TestTypeAccuracy:
         )
         assert result >= 0.8
 
+    def test_ghidra_uint_matches_unsigned_int(self) -> None:
+        result = type_accuracy(
+            "uint hash(byte *str)",
+            "unsigned int hash(const char *s)",
+        )
+        assert result >= 0.8
+
+    def test_ghidra_undefined4_matches_int(self) -> None:
+        result = type_accuracy(
+            "void foo(undefined4 x)",
+            "void foo(int x)",
+        )
+        assert result == 1.0
+
 
 class TestExtractGroundTruth:
     def test_extracts_from_c_source(self, tmp_path: Path) -> None:
@@ -146,6 +214,42 @@ class TestExtractGroundTruth:
         truth = extract_ground_truth(c_source)
         assert len(truth.functions) == 1
         assert truth.functions[0]["name"] == "helper"
+
+    def test_extracts_pointer_return_types(self, tmp_path: Path) -> None:
+        c_source = tmp_path / "ptr.c"
+        c_source.write_text(
+            'char *reverse_string(const char *s) {\n'
+            '    return NULL;\n'
+            '}\n'
+            '\n'
+            'node_t *find(int key) {\n'
+            '    return NULL;\n'
+            '}\n'
+        )
+        truth = extract_ground_truth(c_source)
+        assert len(truth.functions) == 2
+        names = [f["name"] for f in truth.functions]
+        assert "reverse_string" in names
+        assert "find" in names
+
+    def test_does_not_match_control_flow(self, tmp_path: Path) -> None:
+        c_source = tmp_path / "control.c"
+        c_source.write_text(
+            'void foo(void) {\n'
+            '    while(1) {\n'
+            '        break;\n'
+            '    }\n'
+            '    for(int i = 0; i < 10; i++) {\n'
+            '    }\n'
+            '    if(x) {\n'
+            '    }\n'
+            '}\n'
+        )
+        truth = extract_ground_truth(c_source)
+        names = [f["name"] for f in truth.functions]
+        assert "while" not in names
+        assert "for" not in names
+        assert "if" not in names
 
     def test_extracts_signature(self, tmp_path: Path) -> None:
         c_source = tmp_path / "sig.c"
