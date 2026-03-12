@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+SYNTHESIS_FUNCTION_CAP = 50
+
 _DAT_PATTERN = re.compile(r"DAT_[0-9a-fA-F]+")
 
 
@@ -99,9 +101,17 @@ class SemanticSynthesizer:
         parts.append("## Functions and Decompilations")
         parts.append("")
 
-        for result in results:
-            if result.address not in decompilations:
-                continue
+        xref_counts: dict[int, int] = {}
+        for addrs in globals_map.values():
+            for addr in addrs:
+                xref_counts[addr] = xref_counts.get(addr, 0) + 1
+
+        eligible = [r for r in results if r.address in decompilations]
+        if len(eligible) > SYNTHESIS_FUNCTION_CAP:
+            eligible.sort(key=lambda r: xref_counts.get(r.address, 0), reverse=True)
+            eligible = eligible[:SYNTHESIS_FUNCTION_CAP]
+
+        for result in eligible:
             parts.append(f"### {result.name} (0x{result.address:08x})")
             parts.append(f"Classification: {result.classification}, Confidence: {result.confidence}")
             parts.append("```c")
