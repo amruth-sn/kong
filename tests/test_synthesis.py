@@ -181,6 +181,35 @@ Trailing text'''
         assert result.name_refinements == {}
 
 
+class TestSynthesisCap:
+    def test_synthesis_caps_at_50_functions(self) -> None:
+        from kong.synthesis.semantic import SYNTHESIS_FUNCTION_CAP
+
+        results = [_make_result(i, f"func_{i}") for i in range(100)]
+        decomps = {i: f"void func_{i}(void) {{ DAT_1000 = 1; }}" for i in range(100)}
+
+        synth = SemanticSynthesizer(FakeLLMClient())
+        prompt = synth._build_synthesis_prompt(results, decomps)
+
+        func_count = prompt.count("### func_")
+        assert func_count <= SYNTHESIS_FUNCTION_CAP
+
+    def test_prioritizes_functions_with_most_xrefs(self) -> None:
+        results = [_make_result(i, f"func_{i}") for i in range(60)]
+        decomps = {}
+        for i in range(60):
+            if i < 5:
+                decomps[i] = f"void func_{i}(void) {{ DAT_A = 1; DAT_B = 2; DAT_C = 3; }}"
+            else:
+                decomps[i] = f"void func_{i}(void) {{ return; }}"
+
+        synth = SemanticSynthesizer(FakeLLMClient())
+        prompt = synth._build_synthesis_prompt(results, decomps)
+
+        for i in range(5):
+            assert f"func_{i}" in prompt
+
+
 class TestGlobalApplication:
     def test_apply_globals_replaces_dat_names(self) -> None:
         code = "int val = DAT_100008000 + DAT_100008000;"
