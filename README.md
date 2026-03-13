@@ -1,9 +1,9 @@
-<div align="center">
+<div align="left">
 
 
 # Kong
 
-<img src="./assets/kong-logo.png" alt="Kong: World's first AI reverse engineer" width="100%">
+<img src="./assets/kong-logo.png" alt="Kong: World's first AI reverse engineer" width="50%">
 
 **The world's first AI reverse engineer.** <br />
 LLM orchestration for reverse engineering binaries.
