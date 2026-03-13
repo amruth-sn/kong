@@ -1,10 +1,24 @@
 [project]
-name = "kong"
+name = "kong-re"
 version = "0.1.0"
-description = "World's first AI reverse engineer powered LLM orchestration for reverse engineering binaries."
+description = "The world's first AI reverse engineer, with LLM orchestration for reverse engineering binaries."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
+authors = [
+    { name = "Amruth Niranjan", email = "amruthsniranjan@gmail.com" }
+]
+keywords = [
+    "reverse engineering",
+    "binary analysis",
+    "LLM",
+    "AI",
+    "Agentic",
+    "Deobfuscation",
+    "Ghidra",
+    "Decompilation",
+    "Decompiler"
+]
 dependencies = [
     "click>=8.1",
     "rich>=13.0",
@@ -17,8 +31,13 @@ dependencies = [
     "json-repair>=0.58.5",
 ]
 
+[project.urls]
+Homepage = "https://github.com/amruth-sn/kong"
+Repository = "https://github.com/amruth-sn/kong"
+Issues = "https://github.com/amruth-sn/kong/issues"
+
 [project.scripts]
-kong = "kong.__main__:cli"
+kong-re = "kong-re.__main__:cli"
 
 [project.optional-dependencies]
 dev = [
