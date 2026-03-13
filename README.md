@@ -3,6 +3,10 @@
 
 # Kong: The Agentic Reverse Engineer
 
+![PyPI - Version](https://img.shields.io/pypi/v/kong-re)
+![X (formerly Twitter) URL](https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2F0xamruth)
+
+
 <img src="./assets/kong-logo.png" alt="Kong: World's first AI reverse engineer" width="50%">
 
 **LLM orchestration for reverse engineering binaries** <br />
