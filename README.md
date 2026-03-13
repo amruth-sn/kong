@@ -126,21 +126,26 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 ### Quick Start
 
 ```bash
-# 1. Clone Kong
-git clone https://github.com/amruth-sn/kong.git
-cd kong
+# 1. Install Kong
+pip install kong-re
 
-# 2. Install dependencies
-uv sync
-
-# 3. Set your API key
+# 2. Set your API key
 export ANTHROPIC_API_KEY="your-api-key"
 
-# 4. Analyze a binary
-uv run kong analyze ./path/to/stripped_binary
+# 3. Analyze a binary
+kong analyze ./path/to/stripped_binary
 ```
 
 Kong will auto-detect your Ghidra and JDK installations, load the binary into an in-process Ghidra instance, and run the full pipeline.
+
+#### From source
+
+```bash
+git clone https://github.com/amruth-sn/kong.git
+cd kong
+uv sync
+uv run kong analyze ./path/to/stripped_binary
+```
 
 ### Environment Variables
 
