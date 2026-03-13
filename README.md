@@ -224,6 +224,19 @@ Issues and feature requests are welcome via [GitHub Issues](https://github.com/a
 
 Also, don't hesitate to reach out to me on [X](https://x.com/0xamruth) or [LinkedIn](https://www.linkedin.com/in/amruthn/)!
 
+## Acknowledgments
+
+- [Ghidra](https://ghidra-sre.org/)
+- [PyGhidra](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/PyGhidra)
+- [JPype](https://github.com/jpype-project/jpype)
+- [LLM](https://github.com/anthropics/anthropic-sdk-python)
+- [Z3](https://github.com/Z3Prover/z3)
+- [Textual](https://textual.textualize.io/)
+- [Rich](https://rich.readthedocs.io/)
+
+A big shoutout to [KeygraphHQ](https://keygraph.io/)'s [Shannon](https://github.com/KeygraphHQ/shannon) project, which provided the inspiration for this project. My motivation was driven by replicating the same kind of agentic reverse engineering pipeline that Shannon uses for its web-based pentesting tool.
+
+---
 
 Fear the monkey.
 
