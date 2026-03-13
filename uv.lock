@@ -270,7 +270,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kong"
+name = "kong-re"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
