@@ -295,18 +295,31 @@ class GhidraClient:
         logger.info("Renamed function at 0x%08x to '%s'", addr, new_name)
 
     def set_function_signature(self, addr: int, signature_str: str) -> None:
-        """Set a function's full signature from a C-style string."""
+        """Set a function's full signature from a C-style string.
+
+        Preserves the existing calling convention so Ghidra doesn't warn about
+        unknown convention with locked parameter storage.
+        """
         from ghidra.app.cmd.function import ApplyFunctionSignatureCmd
         from ghidra.app.util.parser import FunctionSignatureParser
         from ghidra.program.model.symbol import SourceType
 
+        func = self._get_function(addr)
+        calling_convention = func.getCallingConventionName()
+
         dtm = self.program.getDataTypeManager()
         parser = FunctionSignatureParser(dtm, None)
         func_def = parser.parse(None, signature_str)
+
+        if calling_convention:
+            func_def.setCallingConvention(calling_convention)
+
         cmd = ApplyFunctionSignatureCmd(
             self._to_addr(addr),
             func_def,
             SourceType.USER_DEFINED,
+            True,   # preserveCallingConvention
+            False,  # forceSetName
         )
         tx = self.program.startTransaction("set_function_signature")
         try:

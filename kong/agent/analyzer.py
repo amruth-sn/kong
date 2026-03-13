@@ -12,6 +12,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
+import json_repair
+
 from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem
 from kong.ghidra.client import GhidraClient
@@ -23,6 +25,35 @@ if TYPE_CHECKING:
     from kong.llm.tools import ToolExecutor, ToolSchema
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_int(value: object, default: int = 0) -> int:
+    """Parse an int that may be decimal or hex (e.g. '48', '0x30', '00105300')."""
+    if isinstance(value, int):
+        return value
+    s = str(value).strip()
+    try:
+        return int(s, 0)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return int(s, 16)
+    except (ValueError, TypeError):
+        return default
+
+
+def strip_markdown_fences(text: str) -> str:
+    """Remove markdown code fences from LLM output."""
+    text = text.strip()
+    if "```json" in text:
+        start = text.index("```json") + 7
+        end = text.find("```", start)
+        return text[start:end].strip() if end != -1 else text[start:].strip()
+    if "```" in text:
+        start = text.index("```") + 3
+        end = text.find("```", start)
+        return text[start:end].strip() if end != -1 else text[start:].strip()
+    return text
 
 
 class LLMClient(Protocol):
@@ -56,6 +87,7 @@ class LLMResponse:
     raw: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    address: int = 0
 
 
 @dataclass
@@ -83,34 +115,28 @@ class StructProposal:
 
 
 @dataclass
+class FunctionSnippet:
+    """Decompilation snippet for a caller or callee function."""
+    address: int
+    name: str
+    snippet: str
+
+
+@dataclass
 class AnalysisContext:
     """All context assembled for analyzing a single function."""
     function: FunctionInfo
     decompilation: str
     binary_info: BinaryInfo
-    caller_snippets: list[CallerSnippet] = field(default_factory=list)
-    callee_snippets: list[CalleeSnippet] = field(default_factory=list)
+    caller_snippets: list[FunctionSnippet] = field(default_factory=list)
+    callee_snippets: list[FunctionSnippet] = field(default_factory=list)
     referenced_strings: list[str] = field(default_factory=list)
     known_functions: dict[int, str] = field(default_factory=dict)
     known_types: list[StructDefinition] = field(default_factory=list)
 
 
-@dataclass
-class CallerSnippet:
-    address: int
-    name: str
-    snippet: str
-
-
-@dataclass
-class CalleeSnippet:
-    address: int
-    name: str
-    snippet: str
-
-
 class Analyzer:
-    """Analyzes a single function: gather context → LLM → parse → write back.
+    """Analyzes a single function: gather context -> LLM -> parse -> write back.
 
     Usage::
 
@@ -138,7 +164,6 @@ class Analyzer:
         model: str | None = None,
     ) -> FunctionResult:
         """Full analysis pipeline for one function."""
-        # Inline import: deobfuscator imports from analyzer at module level (circular).
         from kong.agent.deobfuscator import classify_obfuscation
 
         func = item.function
@@ -148,28 +173,14 @@ class Analyzer:
 
         if techniques and self._deobfuscator:
             response, tool_calls = self._deobfuscator.deobfuscate(context, techniques)
-            sig_applied = self._write_back(func.address, response)
-            return FunctionResult(
-                address=func.address,
-                original_name=func.name,
-                name=response.name,
-                signature=response.signature,
-                confidence=response.confidence,
-                classification=response.classification,
-                comments=response.comments,
-                reasoning=response.reasoning,
-                llm_calls=1,
-                signature_applied=sig_applied,
-                struct_proposals=response.struct_proposals,
-                obfuscation_techniques=[t.value for t in techniques],
-                deobfuscation_tool_calls=tool_calls,
-            )
+        else:
+            prompt = self._build_prompt(context)
+            response = self.llm.analyze_function(prompt, model=model)
+            tool_calls = 0
+            techniques = []
 
-        prompt = self._build_prompt(context)
-        response = self.llm.analyze_function(prompt, model=model)
         sig_applied = self._write_back(func.address, response)
-
-        return FunctionResult(
+        result = FunctionResult(
             address=func.address,
             original_name=func.name,
             name=response.name,
@@ -182,6 +193,10 @@ class Analyzer:
             signature_applied=sig_applied,
             struct_proposals=response.struct_proposals,
         )
+        if techniques:
+            result.obfuscation_techniques = [t.value for t in techniques]
+            result.deobfuscation_tool_calls = tool_calls
+        return result
 
     def _build_context(
         self,
@@ -196,8 +211,8 @@ class Analyzer:
 
         decompilation = normalize(self.client.get_decompilation(func.address))
 
-        caller_snippets = self._get_caller_snippets(item.callers, known_results)
-        callee_snippets = self._get_callee_snippets(item.callees, known_results)
+        caller_snippets = self._get_snippets(item.callers, known_results, limit=3)
+        callee_snippets = self._get_snippets(item.callees, known_results, limit=5)
 
         func_strings = self._get_referenced_strings(func.address, strings)
 
@@ -218,42 +233,23 @@ class Analyzer:
             known_types=known_types or [],
         )
 
-    def _get_caller_snippets(
+    def _get_snippets(
         self,
-        caller_addrs: list[int],
+        addrs: list[int],
         known_results: dict[int, FunctionResult],
-    ) -> list[CallerSnippet]:
-        """Get decompilation snippets for callers (first N lines each)."""
+        limit: int,
+    ) -> list[FunctionSnippet]:
+        """Get decompilation snippets for related functions (first 10 lines each)."""
         snippets = []
-        for addr in caller_addrs[:3]:
+        for addr in addrs[:limit]:
             name = self._resolve_name(addr, known_results)
             try:
                 full = normalize(self.client.get_decompilation(addr))
-                lines = full.split("\n")[:10]
-                snippet = "\n".join(lines)
+                snippet = "\n".join(full.split("\n")[:10])
             except Exception:
                 snippet = ""
             if snippet:
-                snippets.append(CallerSnippet(address=addr, name=name, snippet=snippet))
-        return snippets
-
-    def _get_callee_snippets(
-        self,
-        callee_addrs: list[int],
-        known_results: dict[int, FunctionResult],
-    ) -> list[CalleeSnippet]:
-        """Get decompilation snippets for callees (first N lines each)."""
-        snippets = []
-        for addr in callee_addrs[:5]:
-            name = self._resolve_name(addr, known_results)
-            try:
-                full = normalize(self.client.get_decompilation(addr))
-                lines = full.split("\n")[:10]
-                snippet = "\n".join(lines)
-            except Exception:
-                snippet = ""
-            if snippet:
-                snippets.append(CalleeSnippet(address=addr, name=name, snippet=snippet))
+                snippets.append(FunctionSnippet(address=addr, name=name, snippet=snippet))
         return snippets
 
     def _resolve_name(self, addr: int, known_results: dict[int, FunctionResult]) -> str:
@@ -277,20 +273,10 @@ class Analyzer:
         except Exception:
             return []
 
-        result = []
-        for s in strings:
-            if s.address in ref_addrs:
-                result.append(s.value)
-        return result
+        return [s.value for s in strings if s.address in ref_addrs]
 
     def _build_prompt(self, context: AnalysisContext) -> str:
-        """Build the LLM prompt from analysis context.
-
-        The prompt structure is intentionally simple: present the
-        decompilation and available context, ask for structured JSON output.
-
-        TODO: refine prompt engineering from eval results.
-        """
+        """Build the LLM prompt from analysis context."""
         parts = []
 
         parts.append(
@@ -432,60 +418,61 @@ class Analyzer:
         return signature_ok
 
     @staticmethod
+    def _parse_struct_proposals(data: dict[str, object]) -> list[StructProposal]:
+        """Parse struct proposals from a single LLM response entry."""
+        proposals = []
+        for sp in data.get("struct_proposals", []):
+            if not sp.get("name") or not sp.get("total_size"):
+                continue
+            total_size = _safe_int(sp["total_size"])
+            if not total_size:
+                continue
+            fields = [
+                StructFieldProposal(
+                    name=f.get("name", f"field_{i}"),
+                    data_type=f.get("data_type", "undefined"),
+                    offset=_safe_int(f.get("offset", 0)),
+                    size=_safe_int(f.get("size", 4), default=4),
+                )
+                for i, f in enumerate(sp.get("fields", []))
+            ]
+            proposals.append(StructProposal(
+                name=sp["name"],
+                total_size=total_size,
+                fields=fields,
+                used_by_param=sp.get("used_by_param", ""),
+            ))
+        return proposals
+
+    @staticmethod
     def parse_llm_json(raw: str) -> LLMResponse:
-        """Parse the LLM's JSON response into an LLMResponse.
-
-        Handles common issues: markdown fences, trailing commas, etc.
-        """
-        text = raw.strip()
-
-        if "```json" in text:
-            start = text.index("```json") + 7
-            end = text.index("```", start)
-            text = text[start:end].strip()
-        elif "```" in text:
-            start = text.index("```") + 3
-            end = text.index("```", start)
-            text = text[start:end].strip()
+        """Parse the LLM's JSON response into an LLMResponse."""
+        text = strip_markdown_fences(raw)
 
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            return LLMResponse(
-                name="",
-                reasoning=f"Failed to parse LLM response as JSON: {raw[:200]}",
-                raw=raw,
-            )
+            try:
+                data = json_repair.loads(text)
+                if not isinstance(data, dict):
+                    return LLMResponse(
+                        name="",
+                        reasoning=f"Failed to parse LLM response as JSON: {raw[:200]}",
+                        raw=raw,
+                    )
+                logger.debug("Recovered malformed JSON via json_repair")
+            except Exception:
+                return LLMResponse(
+                    name="",
+                    reasoning=f"Failed to parse LLM response as JSON: {raw[:200]}",
+                    raw=raw,
+                )
 
         variables = [
             VariableRename(old_name=v["old_name"], new_name=v["new_name"])
             for v in data.get("variables", [])
             if "old_name" in v and "new_name" in v
         ]
-
-        struct_proposals = []
-        for sp in data.get("struct_proposals", []):
-            if not sp.get("name") or not sp.get("total_size"):
-                continue
-            try:
-                total_size = int(sp["total_size"])
-            except (ValueError, TypeError):
-                continue
-            fields = [
-                StructFieldProposal(
-                    name=f.get("name", f"field_{i}"),
-                    data_type=f.get("data_type", "undefined"),
-                    offset=int(f.get("offset", 0)),
-                    size=int(f.get("size", 4)),
-                )
-                for i, f in enumerate(sp.get("fields", []))
-            ]
-            struct_proposals.append(StructProposal(
-                name=sp["name"],
-                total_size=total_size,
-                fields=fields,
-                used_by_param=sp.get("used_by_param", ""),
-            ))
 
         return LLMResponse(
             name=data.get("name", ""),
@@ -495,68 +482,39 @@ class Analyzer:
             comments=data.get("comments", ""),
             reasoning=data.get("reasoning", ""),
             variables=variables,
-            struct_proposals=struct_proposals,
+            struct_proposals=Analyzer._parse_struct_proposals(data),
             raw=raw,
         )
 
     @staticmethod
     def parse_llm_json_batch(raw: str) -> list[LLMResponse]:
-        text = raw.strip()
-
-        if "```json" in text:
-            start = text.index("```json") + 7
-            end = text.index("```", start)
-            text = text[start:end].strip()
-        elif "```" in text:
-            start = text.index("```") + 3
-            end = text.index("```", start)
-            text = text[start:end].strip()
+        text = strip_markdown_fences(raw)
 
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning("Failed to parse batch LLM response: %s", raw[:200])
-            return []
+            try:
+                data = json_repair.loads(text)
+                logger.debug("Recovered malformed batch JSON via json_repair")
+            except Exception:
+                logger.warning("Failed to parse batch LLM response: %s", raw[:200])
+                return []
 
         if not isinstance(data, list):
             single = Analyzer.parse_llm_json(raw)
             return [single] if single.name else []
 
-        results: list[LLMResponse] = []
-        for entry in data:
-            struct_proposals = []
-            for sp in entry.get("struct_proposals", []):
-                if not sp.get("name") or not sp.get("total_size"):
-                    continue
-                try:
-                    total_size = int(sp["total_size"])
-                except (ValueError, TypeError):
-                    continue
-                fields = [
-                    StructFieldProposal(
-                        name=f.get("name", f"field_{i}"),
-                        data_type=f.get("data_type", "undefined"),
-                        offset=int(f.get("offset", 0)),
-                        size=int(f.get("size", 4)),
-                    )
-                    for i, f in enumerate(sp.get("fields", []))
-                ]
-                struct_proposals.append(StructProposal(
-                    name=sp["name"],
-                    total_size=total_size,
-                    fields=fields,
-                    used_by_param=sp.get("used_by_param", ""),
-                ))
-
-            results.append(LLMResponse(
+        return [
+            LLMResponse(
                 name=entry.get("name", ""),
                 signature=entry.get("signature", ""),
                 confidence=entry.get("confidence", 0),
                 classification=entry.get("classification", ""),
                 comments=entry.get("comments", ""),
                 reasoning=entry.get("reasoning", ""),
-                struct_proposals=struct_proposals,
+                struct_proposals=Analyzer._parse_struct_proposals(entry),
                 raw=raw,
-            ))
-
-        return results
+                address=_safe_int(entry.get("address", 0)),
+            )
+            for entry in data
+        ]

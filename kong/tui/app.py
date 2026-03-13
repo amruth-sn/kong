@@ -38,6 +38,8 @@ class AgentEvent(Message):
 class KongApp(App):
     """Kong analysis TUI."""
 
+    ALLOW_SELECT = True
+
     CSS = """
     Screen { layout: vertical; }
     #header { height: 1; padding: 0 1; background: $primary; color: $text; }
@@ -53,6 +55,8 @@ class KongApp(App):
         super().__init__()
         self.supervisor = supervisor
         self._start_time: float = 0.0
+        self._paused_total: float = 0.0
+        self._pause_start: float | None = None
         self._completed: int = 0
         self._total: int = 0
 
@@ -91,7 +95,9 @@ class KongApp(App):
                 fmt=binary_data.get("format", ""),
                 compiler=binary_data.get("compiler", ""),
             )
-            self._total = event.data.get("total", 0)
+
+        if event.type == EventType.TRIAGE_QUEUE_BUILT:
+            self._total = event.data.get("queue_size", 0)
             progress.update_progress(self._completed, self._total)
 
         if event.type == EventType.PHASE_START:
@@ -112,7 +118,9 @@ class KongApp(App):
         log.log_event(event.message, style=style)
 
     def _tick(self) -> None:
-        elapsed = time.time() - self._start_time if self._start_time else 0.0
+        now = time.time()
+        current_pause = (now - self._pause_start) if self._pause_start else 0.0
+        elapsed = (now - self._start_time - self._paused_total - current_pause) if self._start_time else 0.0
         llm_calls = self.supervisor.stats.llm_calls
         cost = 0.0
         llm_client = getattr(self.supervisor, "llm_client", None)
@@ -128,8 +136,12 @@ class KongApp(App):
 
     def action_toggle_pause(self) -> None:
         if self.supervisor.is_paused:
+            if self._pause_start is not None:
+                self._paused_total += time.time() - self._pause_start
+                self._pause_start = None
             self.supervisor.resume()
         else:
+            self._pause_start = time.time()
             self.supervisor.pause()
 
     def action_quit_app(self) -> None:

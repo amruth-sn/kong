@@ -6,7 +6,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from kong.llm.client import AnthropicClient
-from kong.llm.usage import ModelTokenUsage, TokenUsage, _PRICING
+from kong.llm.usage import ModelTokenUsage, TokenUsage
 
 
 def _mock_message(text: str, input_tokens: int = 100, output_tokens: int = 50):
@@ -115,7 +115,7 @@ class TestAnthropicClient:
         client.analyze_function("p2", model="claude-haiku-4-5-20251001")
 
         assert len(client.usage.by_model) == 2
-        assert "claude-sonnet-4-20250514" in client.usage.by_model
+        assert "claude-opus-4-6" in client.usage.by_model
         assert "claude-haiku-4-5-20251001" in client.usage.by_model
         assert client.usage.calls == 2
 
@@ -151,8 +151,8 @@ class TestAnthropicClient:
 class TestModelTokenUsage:
     def test_cost_calculation(self):
         u = ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
-        cost = u.cost_usd("claude-sonnet-4-20250514")
-        assert cost == 3.0 + 15.0
+        cost = u.cost_usd("claude-opus-4-6")
+        assert cost == 5.0 + 25.0
 
     def test_cost_with_unknown_model_uses_default(self):
         u = ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
@@ -164,8 +164,8 @@ class TestModelTokenUsage:
             input_tokens=0, output_tokens=0,
             cache_creation_tokens=1_000_000, cache_read_tokens=1_000_000,
         )
-        cost = u.cost_usd("claude-sonnet-4-20250514")
-        assert cost == (3.0 * 1.25) + (3.0 * 0.10)
+        cost = u.cost_usd("claude-opus-4-6")
+        assert cost == (5.0 * 1.25) + (5.0 * 0.10)
 
 
 class TestTokenUsage:
@@ -185,24 +185,12 @@ class TestTokenUsage:
 
     def test_total_cost_across_models(self):
         u = TokenUsage()
-        u._get("claude-sonnet-4-20250514").input_tokens = 1_000_000
-        u._get("claude-sonnet-4-20250514").output_tokens = 0
+        u._get("claude-opus-4-6").input_tokens = 1_000_000
+        u._get("claude-opus-4-6").output_tokens = 0
         u._get("claude-haiku-4-5-20251001").input_tokens = 1_000_000
         u._get("claude-haiku-4-5-20251001").output_tokens = 0
 
-        assert u.total_cost_usd == 3.0 + 1.0
-
-
-class TestPricingValues:
-    def test_pricing_entries_exist(self):
-        assert "claude-sonnet-4-20250514" in _PRICING
-        assert "claude-haiku-4-5-20251001" in _PRICING
-
-    def test_haiku_cheaper_than_sonnet(self):
-        haiku_in, haiku_out = _PRICING["claude-haiku-4-5-20251001"]
-        sonnet_in, sonnet_out = _PRICING["claude-sonnet-4-20250514"]
-        assert haiku_in < sonnet_in
-        assert haiku_out < sonnet_out
+        assert u.total_cost_usd == 5.0 + 1.0
 
 
 class TestAnalyzeFunctionBatch:

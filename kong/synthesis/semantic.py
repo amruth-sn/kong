@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from kong.agent.analyzer import strip_markdown_fences
 from kong.agent.models import FunctionResult
 
 if TYPE_CHECKING:
@@ -78,7 +80,7 @@ class SemanticSynthesizer:
         parts.append("}")
         parts.append("```")
 
-        globals_map = self._extract_globals(decompilations)
+        globals_map, xref_counts = self._extract_globals(decompilations)
         results_by_addr = {r.address: r for r in results}
 
         multi_use_globals = {
@@ -101,11 +103,6 @@ class SemanticSynthesizer:
         parts.append("## Functions and Decompilations")
         parts.append("")
 
-        xref_counts: dict[int, int] = {}
-        for addrs in globals_map.values():
-            for addr in addrs:
-                xref_counts[addr] = xref_counts.get(addr, 0) + 1
-
         eligible = [r for r in results if r.address in decompilations]
         if len(eligible) > SYNTHESIS_FUNCTION_CAP:
             eligible.sort(key=lambda r: xref_counts.get(r.address, 0), reverse=True)
@@ -121,28 +118,20 @@ class SemanticSynthesizer:
 
         return "\n".join(parts)
 
-    def _extract_globals(self, decompilations: dict[int, str]) -> dict[str, set[int]]:
-        result: dict[str, set[int]] = {}
+    @staticmethod
+    def _extract_globals(decompilations: dict[int, str]) -> tuple[dict[str, set[int]], dict[int, int]]:
+        """Extract globals and per-function xref counts in a single pass."""
+        globals_map: dict[str, set[int]] = defaultdict(set)
+        xref_counts: dict[int, int] = defaultdict(int)
         for addr, code in decompilations.items():
             for match in _DAT_PATTERN.finditer(code):
-                dat_name = match.group(0)
-                if dat_name not in result:
-                    result[dat_name] = set()
-                result[dat_name].add(addr)
-        return result
+                globals_map[match.group(0)].add(addr)
+                xref_counts[addr] += 1
+        return dict(globals_map), dict(xref_counts)
 
     @staticmethod
     def _parse_response(raw: str) -> SynthesisResult:
-        text = raw.strip()
-
-        if "```json" in text:
-            start = text.index("```json") + 7
-            end = text.index("```", start)
-            text = text[start:end].strip()
-        elif "```" in text:
-            start = text.index("```") + 3
-            end = text.index("```", start)
-            text = text[start:end].strip()
+        text = strip_markdown_fences(raw)
 
         try:
             data = json.loads(text)

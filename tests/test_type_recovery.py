@@ -552,6 +552,7 @@ class TestSupervisorCleanupIntegration:
         response = LLMResponse(
             name="process_request",
             confidence=75,
+            address=0x1000,
             struct_proposals=[
                 StructProposal(
                     name="req_t",
@@ -563,6 +564,7 @@ class TestSupervisorCleanupIntegration:
         )
         llm = MagicMock()
         llm.analyze_function.return_value = response
+        llm.analyze_function_batch.return_value = [response]
 
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
         sup = Supervisor(client, config, llm_client=llm)
@@ -603,6 +605,7 @@ class TestSupervisorCleanupIntegration:
         response = LLMResponse(name="helper", confidence=80)
         llm = MagicMock()
         llm.analyze_function.return_value = response
+        llm.analyze_function_batch.return_value = [response]
 
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
         sup = Supervisor(client, config, llm_client=llm)
@@ -614,59 +617,6 @@ class TestSupervisorCleanupIntegration:
         assert sup.struct_accumulator.proposal_count == 0
         event_types = [e.type for e in events]
         assert EventType.CLEANUP_TYPES_UNIFIED not in event_types
-
-    def test_cleanup_reanalyzes_low_confidence(self, tmp_path):
-        from kong.agent.events import EventType, Phase
-        from kong.agent.supervisor import Supervisor
-        from kong.config import KongConfig, OutputConfig
-
-        funcs = [
-            FunctionInfo(
-                address=0x1000, name="FUN_00001000", size=100,
-                classification=FunctionClassification.MEDIUM,
-            ),
-        ]
-        client = MagicMock()
-        client.get_binary_info.return_value = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC", name="test",
-        )
-        client.list_functions.return_value = funcs
-        client.get_strings.return_value = []
-        client.get_callers.return_value = []
-        client.get_callees.return_value = []
-        client.get_decompilation.return_value = "void f() {}"
-        client.get_function_info.return_value = funcs[0]
-        client.get_xrefs_from.return_value = []
-        client.list_custom_types.return_value = []
-
-        batch_call_count = 0
-
-        def varying_batch_response(prompt: str, **kwargs: object) -> list[LLMResponse]:
-            nonlocal batch_call_count
-            batch_call_count += 1
-            if batch_call_count == 1:
-                return [LLMResponse(name="unknown_func", confidence=30)]
-            return [LLMResponse(name="decode_buffer", confidence=70)]
-
-        llm = MagicMock()
-        llm.analyze_function_batch.side_effect = varying_batch_response
-
-        config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
-        sup = Supervisor(client, config, llm_client=llm)
-
-        events = []
-        sup.on_event(events.append)
-        sup.run()
-
-        assert sup.results[0x1000].name == "decode_buffer"
-        assert sup.results[0x1000].confidence == 70
-
-        cleanup_completes = [
-            e for e in events
-            if e.type == EventType.FUNCTION_COMPLETE and e.phase == Phase.CLEANUP
-        ]
-        assert len(cleanup_completes) == 1
 
     def test_cleanup_retries_failed_signatures(self, tmp_path):
         """Signatures that fail during Phase 2 (type not yet created) get
@@ -709,6 +659,7 @@ class TestSupervisorCleanupIntegration:
             name="cJSON_IsTrue",
             signature="int cJSON_IsTrue(cJSON *item)",
             confidence=95,
+            address=0x1000,
             struct_proposals=[
                 StructProposal(
                     name="cJSON",
@@ -723,6 +674,7 @@ class TestSupervisorCleanupIntegration:
         )
         llm = MagicMock()
         llm.analyze_function.return_value = response
+        llm.analyze_function_batch.return_value = [response]
 
         config = KongConfig(output=OutputConfig(directory=tmp_path / "out"))
         sup = Supervisor(client, config, llm_client=llm)

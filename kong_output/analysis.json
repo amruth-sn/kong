@@ -1,0 +1,182 @@
+{
+  "binary": {
+    "name": "minitest_stripped",
+    "path": "/Users/amruth/Development/kong/kong/internal-testing/minitest/minitest_stripped",
+    "arch": "AARCH64",
+    "format": "Mac OS X Mach-O",
+    "endianness": "little",
+    "word_size": 8,
+    "compiler": "default"
+  },
+  "stats": {
+    "total_functions": 14,
+    "analyzed": 14,
+    "named": 14,
+    "renamed": 0,
+    "confirmed": 14,
+    "high_confidence": 13,
+    "medium_confidence": 1,
+    "low_confidence": 0,
+    "skipped": 0,
+    "errors": 0,
+    "llm_calls": 14,
+    "duration_seconds": 26.05763816833496,
+    "cost_usd": 0.05266799999999999
+  },
+  "functions": [
+    {
+      "address": "0x100000548",
+      "original_name": "main",
+      "name": "main",
+      "signature": "int main(void)",
+      "confidence": 95,
+      "classification": "init",
+      "comments": "Main entry point that demonstrates hash tables with linked list collision handling, string operations (palindrome checking, ROT13, XOR encoding), and various utility functions",
+      "reasoning": "This is clearly the main function based on the signature and comprehensive demonstration of data structures and algorithms. High confidence due to typical main function patterns including initialization, operations, and cleanup.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x1000008bc",
+      "original_name": "hash_string",
+      "name": "hash_string",
+      "signature": "uint hash_string(byte *str)",
+      "confidence": 90,
+      "classification": "utility",
+      "comments": "Computes a hash of a null-terminated string using a linear congruential-style algorithm with XOR mixing. Initializes with 0x1505, multiplies by 0x21, and XORs with each character.",
+      "reasoning": "Clear hashing algorithm with polynomial rolling computation. The function signature and logic match standard string hashing patterns.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000914",
+      "original_name": "linked_list_insert_head",
+      "name": "linked_list_insert_head",
+      "signature": "void linked_list_insert_head(undefined4 param_1, char *param_2)",
+      "confidence": 92,
+      "classification": "utility",
+      "comments": "Creates a new node and inserts it at the head of a singly-linked list. Updates the new node's next pointer to point to the current head, then updates the global head pointer.",
+      "reasoning": "Clear head insertion pattern: creates node, sets next to current head, updates global head. The decompilation comment and logic match perfectly.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000970",
+      "original_name": "count_linked_list_nodes",
+      "name": "count_linked_list_nodes",
+      "signature": "int count_linked_list_nodes(void)",
+      "confidence": 95,
+      "classification": "utility",
+      "comments": "Counts the total number of nodes in a globally-referenced singly linked list by following next pointers at offset 0x10 until NULL is reached.",
+      "reasoning": "Clear loop structure iterating through linked list nodes with explicit counter increment. The function name matches the decompilation header and logic perfectly.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x1000009c0",
+      "original_name": "sum_linked_list",
+      "name": "sum_linked_list",
+      "signature": "int sum_linked_list(void)",
+      "confidence": 95,
+      "classification": "utility",
+      "comments": "Traverses a globally-referenced singly linked list and returns the sum of integer values stored at the beginning of each node. The linked list is terminated by NULL at offset 4.",
+      "reasoning": "Clear accumulation loop through linked list nodes, adding dereferenced values at offset 0. The function name and logic are straightforward.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000a18",
+      "original_name": "print_linked_list_items",
+      "name": "print_linked_list_items",
+      "signature": "uint print_linked_list_items(uint param_1)",
+      "confidence": 75,
+      "classification": "io",
+      "comments": "Iterates through a linked list starting from a global variable and calls printf to print each node, but has a format string bug - printf expects 2 arguments but none are provided.",
+      "reasoning": "Clear iteration through linked list with printf call inside loop. The decompilation comment identifies a format string vulnerability. The function has a logic error in the printf call.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000a8c",
+      "original_name": "is_palindrome",
+      "name": "is_palindrome",
+      "signature": "int is_palindrome(char *str)",
+      "confidence": 95,
+      "classification": "string",
+      "comments": "Checks if a string is a palindrome by comparing characters from both ends moving inward toward the middle. Returns 1 if palindrome, 0 otherwise.",
+      "reasoning": "Classic two-pointer palindrome checking algorithm. Compares characters at symmetric positions from string start and end. The logic and return values are standard for this algorithm.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000b38",
+      "original_name": "xor_buffer",
+      "name": "xor_buffer",
+      "signature": "void xor_buffer(long buffer, int length, byte xor_key)",
+      "confidence": 95,
+      "classification": "crypto",
+      "comments": "Performs in-place XOR encryption/decryption on a memory buffer using a single-byte key. Iterates through each byte and XORs it with the provided key.",
+      "reasoning": "Simple XOR cipher with byte-by-byte iteration. Clear encryption/decryption use case with symmetric key operation.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000b9c",
+      "original_name": "rot13_encode",
+      "name": "rot13_encode",
+      "signature": "void rot13_encode(char *str)",
+      "confidence": 92,
+      "classification": "crypto",
+      "comments": "Applies ROT13 cipher encoding to a null-terminated string in-place. Rotates lowercase letters by 13 positions (a-z wrapping), rotates uppercase letters by 13 positions (A-Z wrapping), and leaves non-alphabetic characters unchanged.",
+      "reasoning": "The function implements classic ROT13 transformation: it iterates through each character, checks if it's lowercase (0x61-0x7a) or uppercase (0x41-0x5a), applies modulo 26 rotation with appropriate ASCII offsets (0x54 for lowercase 'a', 0x34 for uppercase 'A'), and preserves non-alphabetic characters. This is the standard ROT13 algorithm.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000c88",
+      "original_name": "string_reverse",
+      "name": "string_reverse",
+      "signature": "char * string_reverse(char *str)",
+      "confidence": 95,
+      "classification": "string",
+      "comments": "Creates a new dynamically allocated string containing the reverse of the input string. Allocates memory, reverses the characters in a loop, null-terminates the result, and returns the new string.",
+      "reasoning": "The function clearly reverses a string by: (1) calculating string length, (2) allocating memory for reversed string plus null terminator, (3) looping through source string backwards writing to forward positions in destination, and (4) null-terminating the result.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000d5c",
+      "original_name": "linked_list_search",
+      "name": "linked_list_search",
+      "signature": "int * linked_list_search(int search_value)",
+      "confidence": 92,
+      "classification": "utility",
+      "comments": "Searches a linked list for a node containing a specific integer value by traversing from a global head pointer and following next pointers until a match is found or the list ends.",
+      "reasoning": "Classic linear search on linked list structure with early exit on match. Returns pointer to matching node or NULL. The logic is straightforward list traversal.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000dc8",
+      "original_name": "remove_entry_from_list",
+      "name": "remove_entry_from_list",
+      "signature": "int remove_entry_from_list(int entry_id)",
+      "confidence": 85,
+      "classification": "memory",
+      "comments": "Searches a linked list for an entry with matching entry_id, unlinks it from the list, and frees both the entry node and its associated data. Returns 1 on success, 0 if entry not found.",
+      "reasoning": "The function traverses a linked list structure starting at a global address (0x100008000), compares entry_id values, and upon finding a match, unlinks the node by updating pointers and frees both the node and associated data. The pattern of pointer arithmetic at offset +0x10 and +0x8 is consistent with a linked list node structure.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000e7c",
+      "original_name": "free_linked_list",
+      "name": "free_linked_list",
+      "signature": "void free_linked_list(void)",
+      "confidence": 95,
+      "classification": "cleanup",
+      "comments": "Iterates through a linked list structure, freeing the data pointer (at offset 8) and node structure (at offset 0) at each step, then resets the global head pointer to NULL.",
+      "reasoning": "Clear cleanup function that deallocates all list nodes and associated data, typical of resource cleanup patterns. The dual free calls indicate pointer fields at offsets 8 and data management.",
+      "obfuscation_techniques": []
+    },
+    {
+      "address": "0x100000ee4",
+      "original_name": "create_node_or_entry",
+      "name": "create_node_or_entry",
+      "signature": "undefined4 * create_node_or_entry(undefined4 param_1, char *param_2)",
+      "confidence": 88,
+      "classification": "memory",
+      "comments": "Allocates a 24-byte structure, initializes it with an enum/int value at offset 0, a duplicated string at offset 8, and sets a null pointer at offset 16. Returns the allocated structure or NULL on malloc failure.",
+      "reasoning": "Clear memory allocation and initialization pattern. The 24-byte size and specific offset assignments (0, 2\u21928, 4\u219216 in 4-byte word addressing) match a standard linked list node structure.",
+      "obfuscation_techniques": []
+    }
+  ]
+}

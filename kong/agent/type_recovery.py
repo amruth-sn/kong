@@ -84,11 +84,7 @@ class StructAccumulator:
         by_name: dict[str, list[StructProposal]] = defaultdict(list)
         for p in self._proposals:
             by_name[p.name].append(p)
-
-        groups: list[list[StructProposal]] = []
-        for same_name in by_name.values():
-            groups.append(same_name)
-        return groups
+        return list(by_name.values())
 
     @staticmethod
     def _merge_group(group: list[StructProposal]) -> UnifiedStruct:

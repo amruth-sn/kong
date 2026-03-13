@@ -164,14 +164,5 @@ class WorkQueue:
     def get_by_address(self, addr: int) -> WorkItem | None:
         return self._by_address.get(addr)
 
-    def items_by_depth(self) -> list[list[WorkItem]]:
-        """Return items grouped by depth level, sorted ascending (leaves first)."""
-        if not self._items:
-            return []
-        depth_map: dict[int, list[WorkItem]] = {}
-        for item in self._items:
-            depth_map.setdefault(item.depth, []).append(item)
-        return [depth_map[d] for d in sorted(depth_map)]
-
     def all_items(self) -> list[WorkItem]:
         return list(self._items)

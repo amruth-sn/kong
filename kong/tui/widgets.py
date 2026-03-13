@@ -112,6 +112,38 @@ class StatusBar(Static):
 
     _content: str = ""
 
+    @staticmethod
+    def _keybind(key: str, label: str) -> Text:
+        """Render a keybind like 'Pause' with the key letter highlighted."""
+        t = Text()
+        t.append(key, style="bold cyan")
+        t.append(label)
+        return t
+
+    def build_status_text(
+        self,
+        elapsed: float,
+        llm_calls: int,
+        cost: float,
+        paused: bool,
+    ) -> Text:
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+
+        bar = Text()
+        if paused:
+            bar.append_text(self._keybind("r", "esume"))
+        else:
+            bar.append_text(self._keybind("p", "ause"))
+        bar.append("  ")
+        bar.append_text(self._keybind("q", "uit"))
+        bar.append("  ")
+        bar.append_text(self._keybind("e", "xport now"))
+        bar.append(f"    LLM: {llm_calls} | ${cost:.4f} | {minutes}m {seconds:02d}s")
+        if paused:
+            bar.append("  ⏸ PAUSED", style="bold yellow")
+        return bar
+
     def update_status(
         self,
         elapsed: float,
@@ -119,13 +151,4 @@ class StatusBar(Static):
         cost: float,
         paused: bool,
     ) -> None:
-        minutes = int(elapsed // 60)
-        seconds = int(elapsed % 60)
-        text = (
-            f"[p]ause  [q]uit  [e]xport now    "
-            f"LLM: {llm_calls} | ${cost:.4f} | {minutes}m {seconds:02d}s"
-        )
-        if paused:
-            text += "  PAUSED"
-        self._content = text
-        self.update(self._content)
+        self.update(self.build_status_text(elapsed, llm_calls, cost, paused))

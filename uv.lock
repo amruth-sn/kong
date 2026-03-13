@@ -261,6 +261,15 @@ wheels = [
 ]
 
 [[package]]
+name = "json-repair"
+version = "0.58.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/4d/5b654ef49ed6077f8f8206dae41c2a2de8fef4877483b2c85652ed95fbaf/json_repair-0.58.5.tar.gz", hash = "sha256:2dfdb44573197eeea8eda23f23677412634b2fe2a93bd1dbe4f1b88e4896efa3", size = 44686, upload-time = "2026-03-07T12:57:16.504Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/55/390151425cd3095da09d38328481ce9ebd0a4f476882ee74849d5b530cf8/json_repair-0.58.5-py3-none-any.whl", hash = "sha256:16f65addc58d8e0b2b8514e3f6ea9ff568267ce94ead95f4faf90e40dd35d526", size = 43458, upload-time = "2026-03-07T12:57:15.455Z" },
+]
+
+[[package]]
 name = "kong"
 version = "0.1.0"
 source = { editable = "." }
@@ -268,6 +277,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "click" },
     { name = "jpype1" },
+    { name = "json-repair" },
     { name = "lief" },
     { name = "pyghidra" },
     { name = "rich" },
@@ -286,6 +296,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.40" },
     { name = "click", specifier = ">=8.1" },
     { name = "jpype1", specifier = ">=1.6.0" },
+    { name = "json-repair", specifier = ">=0.58.5" },
     { name = "lief", specifier = ">=0.15" },
     { name = "pyghidra", specifier = ">=2.2.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

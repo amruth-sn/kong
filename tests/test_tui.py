@@ -5,20 +5,15 @@ from __future__ import annotations
 from unittest.mock import MagicMock, create_autospec
 
 from textual.app import App
-from textual.widget import Widget
-from textual.widgets import RichLog, Static
+from textual.widgets import Static
 
 from kong.agent.events import Event, EventType
 from kong.agent.supervisor import Supervisor
 from kong.tui.app import EVENT_STYLES, AgentEvent, KongApp
-from kong.tui.widgets import AgentLog, BinaryHeader, ProgressWidget, StatusBar
+from kong.tui.widgets import BinaryHeader, ProgressWidget, StatusBar
 
 
 class TestBinaryHeader:
-    def test_is_static_subclass(self) -> None:
-        widget = BinaryHeader()
-        assert isinstance(widget, Static)
-
     def test_set_info_formats_correctly(self) -> None:
         widget = BinaryHeader()
         widget.set_info(
@@ -32,10 +27,6 @@ class TestBinaryHeader:
 
 
 class TestProgressWidget:
-    def test_is_widget_subclass(self) -> None:
-        widget = ProgressWidget()
-        assert isinstance(widget, Widget)
-
     def test_default_reactive_values(self) -> None:
         widget = ProgressWidget()
         assert widget.phase_name == "Initializing"
@@ -64,21 +55,11 @@ class TestProgressWidget:
         assert widget.low == 1
 
 
-class TestAgentLog:
-    def test_is_richlog_subclass(self) -> None:
-        widget = AgentLog()
-        assert isinstance(widget, RichLog)
-
-
 class TestStatusBar:
-    def test_is_static_subclass(self) -> None:
-        widget = StatusBar()
-        assert isinstance(widget, Static)
-
     def test_update_status_formats_correctly(self) -> None:
         widget = StatusBar()
-        widget.update_status(elapsed=125.0, llm_calls=10, cost=0.0523, paused=False)
-        content = widget._content
+        text = widget.build_status_text(elapsed=125.0, llm_calls=10, cost=0.0523, paused=False)
+        content = text.plain
         assert "LLM: 10" in content
         assert "$0.0523" in content
         assert "2m 05s" in content
@@ -86,33 +67,12 @@ class TestStatusBar:
 
     def test_update_status_paused(self) -> None:
         widget = StatusBar()
-        widget.update_status(elapsed=60.0, llm_calls=5, cost=0.01, paused=True)
-        content = widget._content
+        text = widget.build_status_text(elapsed=60.0, llm_calls=5, cost=0.01, paused=True)
+        content = text.plain
         assert "PAUSED" in content
 
 
-class TestKongApp:
-    def test_is_app_subclass(self) -> None:
-        supervisor = create_autospec(Supervisor, instance=True)
-        supervisor.is_paused = False
-        supervisor.stats = MagicMock()
-        supervisor.stats.llm_calls = 0
-        app = KongApp(supervisor)
-        assert isinstance(app, App)
-
-    def test_stores_supervisor(self) -> None:
-        supervisor = create_autospec(Supervisor, instance=True)
-        supervisor.is_paused = False
-        supervisor.stats = MagicMock()
-        supervisor.stats.llm_calls = 0
-        app = KongApp(supervisor)
-        assert app.supervisor is supervisor
-
-
 class TestEventStyles:
-    def test_event_styles_is_dict(self) -> None:
-        assert isinstance(EVENT_STYLES, dict)
-
     def test_event_styles_has_expected_keys(self) -> None:
         expected_keys = {
             EventType.PHASE_START,

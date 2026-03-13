@@ -87,21 +87,21 @@ class TestGlobalExtraction:
             0x402000: SAMPLE_DECOMP_B,
         }
         synth = SemanticSynthesizer(FakeLLMClient())
-        result = synth._extract_globals(decompilations)
+        globals_map, xref_counts = synth._extract_globals(decompilations)
 
-        assert "DAT_100008000" in result
-        assert result["DAT_100008000"] == {0x401000, 0x402000}
+        assert "DAT_100008000" in globals_map
+        assert globals_map["DAT_100008000"] == {0x401000, 0x402000}
 
-        assert "DAT_100004000" in result
-        assert result["DAT_100004000"] == {0x401000}
+        assert "DAT_100004000" in globals_map
+        assert globals_map["DAT_100004000"] == {0x401000}
 
     def test_no_globals_when_none_present(self) -> None:
         decompilations = {
             0x401000: SAMPLE_DECOMP_NO_GLOBALS,
         }
         synth = SemanticSynthesizer(FakeLLMClient())
-        result = synth._extract_globals(decompilations)
-        assert result == {}
+        globals_map, xref_counts = synth._extract_globals(decompilations)
+        assert globals_map == {}
 
 
 class TestPromptBuilding:

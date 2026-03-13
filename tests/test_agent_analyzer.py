@@ -8,10 +8,7 @@ from unittest.mock import MagicMock, patch
 from kong.agent.analyzer import (
     Analyzer,
     AnalysisContext,
-    CallerSnippet,
-    CalleeSnippet,
     LLMResponse,
-    VariableRename,
 )
 from kong.agent.queue import WorkItem
 from kong.agent.models import FunctionResult
@@ -409,3 +406,28 @@ class TestParseBatchJson:
     def test_returns_empty_on_parse_failure(self) -> None:
         results = Analyzer.parse_llm_json_batch("not json at all")
         assert results == []
+
+    def test_recovers_truncated_json_array(self) -> None:
+        raw = '[{"name": "foo", "confidence": 80}, {"name": "bar", "confid'
+        results = Analyzer.parse_llm_json_batch(raw)
+        assert len(results) >= 1
+        assert results[0].name == "foo"
+
+    def test_recovers_trailing_comma(self) -> None:
+        raw = '[{"name": "foo", "confidence": 80,}]'
+        results = Analyzer.parse_llm_json_batch(raw)
+        assert len(results) == 1
+        assert results[0].name == "foo"
+
+
+class TestParseLlmJsonRepair:
+    def test_recovers_trailing_comma_single(self) -> None:
+        raw = '{"name": "init_state", "confidence": 85, "classification": "init",}'
+        result = Analyzer.parse_llm_json(raw)
+        assert result.name == "init_state"
+        assert result.confidence == 85
+
+    def test_recovers_truncated_object(self) -> None:
+        raw = '{"name": "process_data", "confidence": 70, "classification": "par'
+        result = Analyzer.parse_llm_json(raw)
+        assert result.name == "process_data"

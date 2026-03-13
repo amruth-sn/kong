@@ -19,7 +19,7 @@ from kong.llm.usage import TokenUsage
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MODEL = "claude-opus-4-6"
 
 
 class AnthropicClient:
@@ -78,7 +78,7 @@ class AnthropicClient:
         effective_model = model or self.model
         message = self._client.messages.create(
             model=effective_model,
-            max_tokens=self.max_tokens * 2,
+            max_tokens=16384,
             system=[{
                 "type": "text",
                 "text": f"{BATCH_SYSTEM_PROMPT}\n\n{BATCH_OUTPUT_SCHEMA}",

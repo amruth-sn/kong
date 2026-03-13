@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 _PRICING: dict[str, tuple[float, float]] = {
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
     "claude-sonnet-4-20250514": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (1.0, 5.0),
 }
