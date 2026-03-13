@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kong.tui.widgets import BinaryHeader, ProgressWidget, StatusBar
+from kong.tui.widgets import BinaryHeader, StatusBar
 
 
 class TestBinaryHeader:
@@ -17,25 +17,6 @@ class TestBinaryHeader:
         expected = "Binary: test.bin | x86_64 ELF | GCC"
         assert widget._content == expected
 
-
-class TestProgressWidget:
-    def test_update_phase(self) -> None:
-        widget = ProgressWidget()
-        widget.update_phase("Analysis")
-        assert widget.phase_name == "Analysis"
-
-    def test_update_progress(self) -> None:
-        widget = ProgressWidget()
-        widget.update_progress(5, 10)
-        assert widget.completed == 5
-        assert widget.total == 10
-
-    def test_update_confidence(self) -> None:
-        widget = ProgressWidget()
-        widget.update_confidence(3, 2, 1)
-        assert widget.high == 3
-        assert widget.medium == 2
-        assert widget.low == 1
 
 
 class TestStatusBar:
