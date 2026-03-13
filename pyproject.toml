@@ -1,6 +1,6 @@
 [project]
 name = "kong-re"
-version = "0.1.0"
+version = "0.1.1"
 description = "The world's first AI reverse engineer, with LLM orchestration for reverse engineering binaries."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -37,7 +37,7 @@ Repository = "https://github.com/amruth-sn/kong"
 Issues = "https://github.com/amruth-sn/kong/issues"
 
 [project.scripts]
-kong-re = "kong.__main__:cli"
+kong = "kong.__main__:cli"
 
 [project.optional-dependencies]
 dev = [
