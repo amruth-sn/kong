@@ -37,7 +37,7 @@ It also identified the supporting infrastructure: ELF dynamic section parsing, `
 
 Beyond the backdoor, Kong correctly recovered the full breadth of liblzma's real functionality — LZMA/LZMA2 encoders and decoders, match finders, range coders, streaming state machines, CRC32/CRC64 (generic and CLMUL-accelerated), SHA-256, XZ container format handling, and branch-call-jump filters for x86, ARM64, and RISC-V.
 
-Five functions were flagged for potential control-flow flattening — all correctly identified as false positives in the reasoning (legitimate 7-23 state resumption machines inherent to liblzma's streaming API).
+Five functions were flagged for potential control-flow flattening. All were correctly identified as false positives in the reasoning (legitimate 7-23 state resumption machines inherent to liblzma's streaming API).
 
 ### Why This Matters
 
