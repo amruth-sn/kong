@@ -30,10 +30,8 @@ from kong.synthesis.semantic import SemanticSynthesizer, SynthesisResult
 logger = logging.getLogger(__name__)
 
 OPUS_MODEL = "claude-opus-4-6"
-MAX_INPUT_TOKENS = 180_000
+MAX_PROMPT_CHARS = 400_000
 MAX_CHUNK_FUNCTIONS = 120
-CHARS_PER_TOKEN = 4
-PER_FUNCTION_OVERHEAD_CHARS = 60
 
 
 class Supervisor:
@@ -300,47 +298,39 @@ class Supervisor:
             ),
         ))
 
-    def _estimate_overhead_tokens(self) -> int:
-        """Estimate token overhead from system prompt, known-functions list, and headers."""
-        overhead_chars = 2000  # system prompt + batch schema + binary header
-
-        known = {
-            addr: r.name
-            for addr, r in self.results.items()
-            if r.name and not r.skipped and not r.error
-        }
-        if known:
-            overhead_chars += sum(
-                len(f"- 0x{addr:08x}: {name}\n") for addr, name in known.items()
-            )
-            overhead_chars += 40  # section header
-
-        return overhead_chars // CHARS_PER_TOKEN
-
     def _split_into_chunks(
         self,
         items: list[tuple[WorkItem, str]],
     ) -> list[list[tuple[WorkItem, str]]]:
-        """Split items into chunks that fit within the input token budget."""
-        overhead_tokens = self._estimate_overhead_tokens()
-        budget = MAX_INPUT_TOKENS - overhead_tokens
+        """Split items into chunks by building the actual prompt and measuring size."""
+        assert self.binary_info is not None
+
+        overhead = self._build_chunk_prompt([])
+        overhead_len = len(overhead)
+        available = MAX_PROMPT_CHARS - overhead_len
 
         chunks: list[list[tuple[WorkItem, str]]] = []
         current_chunk: list[tuple[WorkItem, str]] = []
-        current_tokens = 0
+        current_chars = 0
 
         for item, decomp in items:
-            est_tokens = (len(decomp) + PER_FUNCTION_OVERHEAD_CHARS) // CHARS_PER_TOKEN
+            func = item.function
+            entry = (
+                f"### 0x{func.address:08x}: {func.name} ({func.size} bytes)\n"
+                f"```c\n{decomp}\n```\n\n"
+            )
+            entry_len = len(entry)
+
             chunk_full = (
-                current_tokens + est_tokens > budget
+                current_chars + entry_len > available
                 or len(current_chunk) >= MAX_CHUNK_FUNCTIONS
             )
             if current_chunk and chunk_full:
                 chunks.append(current_chunk)
                 current_chunk = []
-                current_tokens = 0
+                current_chars = 0
             current_chunk.append((item, decomp))
-            current_tokens += est_tokens
+            current_chars += entry_len
 
         if current_chunk:
             chunks.append(current_chunk)
@@ -361,11 +351,6 @@ class Supervisor:
         analyzer = Analyzer(self.client, self.llm_client)
         chunks = self._split_into_chunks(items)
         total_chunks = len(chunks)
-        overhead = self._estimate_overhead_tokens()
-        logger.info(
-            "Split %d functions into %d chunks (overhead ~%dK tokens, budget ~%dK tokens).",
-            len(items), total_chunks, overhead // 1000, (MAX_INPUT_TOKENS - overhead) // 1000,
-        )
         processed = 0
 
         for chunk_num, chunk in enumerate(chunks, start=1):
@@ -393,6 +378,10 @@ class Supervisor:
             )
 
             prompt = self._build_chunk_prompt(chunk)
+            logger.info(
+                "Chunk %d/%d prompt: %d chars (%d functions).",
+                chunk_num, total_chunks, len(prompt), len(chunk),
+            )
 
             try:
                 responses = self.llm_client.analyze_function_batch(
