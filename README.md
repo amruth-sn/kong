@@ -45,6 +45,27 @@ Kong solves this by building rich context windows from Ghidra's program analysis
 - **Eval Framework**: Built-in evaluation harness that scores analysis output against ground-truth source code, measuring symbol accuracy (word-based Jaccard) and type accuracy (signature component scoring).
 - **Cost-Tracking**: Tracks token usage and costs for each LLM call, and the total cost of the analysis.
 
+## Supported Architectures
+
+Kong works with most Ghidra-decompilable binaries (for now, more to come).
+
+#### Confidence
+
+| | C | C++ | Go | Rust |
+|---|---|---|---|---|
+| x86 | High | High | Medium | Medium |
+| x86-64 | High | High | Medium | Medium |
+| ARM (32-bit) | High | High | Medium | Low |
+| AArch64 | High | High | Medium | Low |
+| MIPS | Medium | Medium | Low | Low |
+| PowerPC | Medium | Medium | Low | Low |
+
+**High** — Kong reliably decompiles, deobfuscates, and recovers names, types, and structure.
+**Medium** — Decompilation is usable but noisier. Expect partial recovery and lower confidence scores.
+**Low** — Decompilation has significant gaps and results will stay incomplete, noisy, or unreadable.
+
+Binary size scales positively with function count, LLM cost, and time to completion. However, binary size also scales negatively with confidence, so keep this in mind when analyzing larger binaries.
+
 ## Architecture
 
 Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates triage, parallel analysis, and post-processing:
