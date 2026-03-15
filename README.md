@@ -60,11 +60,13 @@ Kong works with most Ghidra-decompilable binaries (for now, more to come).
 | MIPS | Medium | Medium | Low | Low |
 | PowerPC | Medium | Medium | Low | Low |
 
-**High** — Kong reliably decompiles, deobfuscates, and recovers names, types, and structure.
-**Medium** — Decompilation is usable but noisier. Expect partial recovery and lower confidence scores.
-**Low** — Decompilation has significant gaps and results will stay incomplete, noisy, or unreadable.
+**High**: Kong reliably decompiles, deobfuscates, and recovers names, types, and structure.
 
-Binary size scales positively with function count, LLM cost, and time to completion. However, binary size also scales negatively with confidence, so keep this in mind when analyzing larger binaries.
+**Medium**: Decompilation is usable but noisier. Expect partial recovery and lower confidence scores.
+
+**Low**: Decompilation has significant gaps and results will stay incomplete, noisy, or unreadable.
+
+**Note**: Binary size scales positively with function count, LLM cost, and time to completion. However, binary size also scales negatively with confidence, so keep this in mind when analyzing larger binaries.
 
 ## Architecture
 
