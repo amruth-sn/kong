@@ -1,6 +1,6 @@
 [project]
 name = "kong-re"
-version = "0.1.2"
+version = "0.2.0"
 description = "The world's first AI reverse engineer, with LLM orchestration for reverse engineering binaries."
 readme = "README.md"
 license = { text = "Apache-2.0" }
