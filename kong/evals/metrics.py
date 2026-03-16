@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import re
 
-from kong.evals.harness import match_functions
-
 
 _SYNONYM_GROUPS: list[set[str]] = [
     {"search", "find", "lookup"},
@@ -184,6 +182,40 @@ def type_accuracy(predicted_sig: str, truth_sig: str) -> float:
         score += 0.3
 
     return score
+
+
+def match_functions(
+    predicted: list[dict[str, str]],
+    truth: list[dict[str, str]],
+) -> list[tuple[dict[str, str], dict[str, str] | None, float]]:
+    """Match predicted functions to truth entries by best symbol_accuracy (greedy, no reuse)."""
+    used_truth_indices: set[int] = set()
+    results: list[tuple[dict[str, str], dict[str, str] | None, float]] = []
+
+    scored_pairs: list[tuple[int, int, float]] = []
+    for pi, pred in enumerate(predicted):
+        for ti, tr in enumerate(truth):
+            sc = symbol_accuracy(pred["name"], tr["name"])
+            scored_pairs.append((pi, ti, sc))
+
+    scored_pairs.sort(key=lambda x: x[2], reverse=True)
+
+    matched_pred: dict[int, tuple[int, float]] = {}
+    for pi, ti, sc in scored_pairs:
+        if pi in matched_pred or ti in used_truth_indices:
+            continue
+        if sc > 0.0:
+            matched_pred[pi] = (ti, sc)
+            used_truth_indices.add(ti)
+
+    for pi, pred in enumerate(predicted):
+        if pi in matched_pred:
+            ti, sc = matched_pred[pi]
+            results.append((pred, truth[ti], sc))
+        else:
+            results.append((pred, None, 0.0))
+
+    return results
 
 
 def overall_score(

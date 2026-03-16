@@ -10,13 +10,13 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kong.agent.analyzer import AnalysisContext, LLMClient, LLMResponse
 from kong.agent.models import FunctionResult
 from kong.agent.prompts import DEOBFUSCATION_SYSTEM_PROMPT, OUTPUT_SCHEMA
 from kong.ghidra.types import BinaryInfo, StringEntry
 from kong.llm.tools import DEOBFUSCATION_TOOLS, ToolExecutor
 
 if TYPE_CHECKING:
+    from kong.agent.analyzer import AnalysisContext, LLMClient, LLMResponse
     from kong.agent.queue import WorkItem
     from kong.ghidra.client import GhidraClient
 

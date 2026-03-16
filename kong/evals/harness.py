@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kong.evals.metrics import symbol_accuracy, type_accuracy
+from kong.evals.metrics import match_functions, symbol_accuracy, type_accuracy
 
 
 @dataclass
@@ -56,40 +56,6 @@ def load_analysis(analysis_path: Path) -> list[dict[str, str]]:
     """Load Kong's analysis.json and return the list of function entries."""
     data = json.loads(analysis_path.read_text())
     return data["functions"]
-
-
-def match_functions(
-    predicted: list[dict[str, str]],
-    truth: list[dict[str, str]],
-) -> list[tuple[dict[str, str], dict[str, str] | None, float]]:
-    """Match predicted functions to truth entries by best symbol_accuracy (greedy, no reuse)."""
-    used_truth_indices: set[int] = set()
-    results: list[tuple[dict[str, str], dict[str, str] | None, float]] = []
-
-    scored_pairs: list[tuple[int, int, float]] = []
-    for pi, pred in enumerate(predicted):
-        for ti, tr in enumerate(truth):
-            sc = symbol_accuracy(pred["name"], tr["name"])
-            scored_pairs.append((pi, ti, sc))
-
-    scored_pairs.sort(key=lambda x: x[2], reverse=True)
-
-    matched_pred: dict[int, tuple[int, float]] = {}
-    for pi, ti, sc in scored_pairs:
-        if pi in matched_pred or ti in used_truth_indices:
-            continue
-        if sc > 0.0:
-            matched_pred[pi] = (ti, sc)
-            used_truth_indices.add(ti)
-
-    for pi, pred in enumerate(predicted):
-        if pi in matched_pred:
-            ti, sc = matched_pred[pi]
-            results.append((pred, truth[ti], sc))
-        else:
-            results.append((pred, None, 0.0))
-
-    return results
 
 
 def score(analysis_path: Path, source_path: Path) -> Scorecard:
