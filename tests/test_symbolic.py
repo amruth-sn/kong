@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from kong.ghidra.types import (
     BasicBlock,
     BlockEdge,

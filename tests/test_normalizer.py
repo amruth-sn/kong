@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from kong.normalizer.syntactic import normalize
 
 

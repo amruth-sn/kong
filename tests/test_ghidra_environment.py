@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-
 from kong.ghidra.environment import (
     find_ghidra_install,
     find_java_home,

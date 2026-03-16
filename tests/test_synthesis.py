@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 from kong.agent.models import FunctionResult
 from kong.synthesis.semantic import (
     SYNTHESIS_FUNCTION_CAP,
