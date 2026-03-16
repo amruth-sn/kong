@@ -93,7 +93,7 @@ def print_setup_needed(console: Console, provider: LLMProvider = LLMProvider.ANT
     console.print()
     console.print(f"[bold red]{env_var} is not set.[/bold red]")
     console.print()
-    console.print(f"Kong requires a {provider.value.title()} API key to analyze binaries.")
+    console.print(f"Kong requires a {provider.display_name} API key to analyze binaries.")
     console.print("Run [bold cyan]kong setup[/bold cyan] for guided configuration.")
     console.print()
     console.print("Or set it directly:")

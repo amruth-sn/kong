@@ -13,6 +13,10 @@ class LLMProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
 
+    @property
+    def display_name(self) -> str:
+        return {LLMProvider.ANTHROPIC: "Anthropic", LLMProvider.OPENAI: "OpenAI"}[self]
+
 
 @dataclass
 class GhidraConfig:

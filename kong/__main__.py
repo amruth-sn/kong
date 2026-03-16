@@ -267,7 +267,7 @@ def setup() -> None:
     step = 1
     for provider in LLMProvider:
         env_var = _ENV_VARS[provider]
-        console.print(f"[bold]Step {step}: {provider.value.title()} API Key[/bold]")
+        console.print(f"[bold]Step {step}: {provider.display_name} API Key[/bold]")
         console.print()
 
         current_key = os.environ.get(env_var, "")
