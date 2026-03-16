@@ -4,20 +4,32 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-
 from click.testing import CliRunner
 
 from kong.__main__ import cli
+from kong.config import LLMProvider
+from kong.db import save_setup
 
 
-def test_analyze_missing_binary():
+def _complete_setup(tmp_path, monkeypatch):
+    """Mark setup as complete with Anthropic as default."""
+    monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+    save_setup(
+        enabled=[LLMProvider.ANTHROPIC],
+        default=LLMProvider.ANTHROPIC,
+    )
+
+
+def test_analyze_missing_binary(tmp_path, monkeypatch):
+    _complete_setup(tmp_path, monkeypatch)
     runner = CliRunner()
     result = runner.invoke(cli, ["analyze", "/nonexistent/binary"])
     assert result.exit_code != 0
 
 
-def test_analyze_no_ghidra_installed(tmp_path):
+def test_analyze_no_ghidra_installed(tmp_path, monkeypatch):
     """When Ghidra is not installed, show install instructions."""
+    _complete_setup(tmp_path, monkeypatch)
     binary = tmp_path / "test_binary"
     binary.write_bytes(b"\x00" * 16)
 
@@ -31,11 +43,13 @@ def test_analyze_no_ghidra_installed(tmp_path):
     assert "brew install ghidra" in result.output
 
 
-def test_setup_with_key_set():
-    """Setup command detects existing API key."""
+def test_setup_wizard_saves_config(tmp_path, monkeypatch):
+    """Setup wizard persists provider selection."""
+    monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test1234")
+
     runner = CliRunner()
-    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test1234"}):
-        result = runner.invoke(cli, ["setup"])
+    result = runner.invoke(cli, ["setup"], input="1\n")
 
     assert result.exit_code == 0
     assert "sk-ant-" in result.output
