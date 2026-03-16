@@ -23,6 +23,7 @@ dependencies = [
     "click>=8.1",
     "rich>=13.0",
     "anthropic>=0.40",
+    "openai>=1.0",
     "textual>=1.0",
     "lief>=0.15",
     "z3-solver>=4.12",
