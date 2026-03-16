@@ -12,6 +12,7 @@ from typing import Any
 
 import pyghidra
 
+from kong.ghidra.environment import find_ghidra_install
 from kong.ghidra.types import (
     BasicBlock,
     BinaryInfo,
@@ -28,8 +29,6 @@ from kong.ghidra.types import (
     VariableInfo,
     XRef,
 )
-from kong.ghidra.environment import find_ghidra_install
-
 
 logger = logging.getLogger(__name__)
 
@@ -195,10 +194,14 @@ class GhidraClient:
             di.openProgram(self.program)
             result = di.decompileFunction(func, 30, ConsoleTaskMonitor())
             if not result.decompileCompleted():
-                raise GhidraClientError(f"Decompilation failed for function at 0x{addr:08x}")
+                raise GhidraClientError(
+                    f"Decompilation failed for function at 0x{addr:08x}"
+                )
             decomp_func = result.getDecompiledFunction()
             if decomp_func is None:
-                raise GhidraClientError(f"Decompilation failed for function at 0x{addr:08x}")
+                raise GhidraClientError(
+                    f"Decompilation failed for function at 0x{addr:08x}"
+                )
             return str(decomp_func.getC())
         finally:
             di.dispose()
@@ -233,21 +236,25 @@ class GhidraClient:
         """Get addresses of functions that call the function at addr."""
         target = self._to_addr(addr)
         refs = self.flat_api.getReferencesTo(target)
-        return list({
-            int(ref.getFromAddress().getOffset())
-            for ref in refs
-            if ref.getReferenceType().isCall()
-        })
+        return list(
+            {
+                int(ref.getFromAddress().getOffset())
+                for ref in refs
+                if ref.getReferenceType().isCall()
+            }
+        )
 
     def get_callees(self, addr: int) -> list[int]:
         """Get addresses of functions called by the function at addr."""
         source = self._to_addr(addr)
         refs = self.program.getReferenceManager().getReferencesFrom(source)
-        return list({
-            int(ref.getToAddress().getOffset())
-            for ref in refs
-            if ref.getReferenceType().isCall()
-        })
+        return list(
+            {
+                int(ref.getToAddress().getOffset())
+                for ref in refs
+                if ref.getReferenceType().isCall()
+            }
+        )
 
     def get_strings(self) -> list[StringEntry]:
         """Get all defined strings in the binary."""
@@ -279,6 +286,7 @@ class GhidraClient:
         """Rename a function at the given address."""
         func = self._get_function_at(addr)
         from ghidra.program.model.symbol import SourceType
+
         tx = self.program.startTransaction("rename_function")
         try:
             func.setName(new_name, SourceType.USER_DEFINED)
@@ -310,7 +318,7 @@ class GhidraClient:
             self._to_addr(addr),
             func_def,
             SourceType.USER_DEFINED,
-            True,   # preserveCallingConvention
+            True,  # preserveCallingConvention
             False,  # forceSetName
         )
         tx = self.program.startTransaction("set_function_signature")
@@ -380,7 +388,12 @@ class GhidraClient:
             dtm.addDataType(struct_dt, None)
         finally:
             self.program.endTransaction(tx, True)
-        logger.info("Created struct '%s' (%d bytes, %d fields)", definition.name, definition.size, definition.field_count)
+        logger.info(
+            "Created struct '%s' (%d bytes, %d fields)",
+            definition.name,
+            definition.size,
+            definition.field_count,
+        )
 
     def apply_type_to_param(
         self,
@@ -415,7 +428,10 @@ class GhidraClient:
             self.program.endTransaction(tx, True)
         logger.info(
             "Applied type '%s%s' to param %d of function at 0x%08x",
-            type_name, " *" if as_pointer else "", param_ordinal, func_addr,
+            type_name,
+            " *" if as_pointer else "",
+            param_ordinal,
+            func_addr,
         )
 
     def list_custom_types(self) -> list[StructDefinition]:
@@ -434,17 +450,21 @@ class GhidraClient:
             fields = []
             for i in range(dt.getNumDefinedComponents()):
                 comp = dt.getComponent(i)
-                fields.append(StructField(
-                    name=str(comp.getFieldName() or f"field_{i}"),
-                    data_type=str(comp.getDataType().getDisplayName()),
-                    offset=int(comp.getOffset()),
-                    size=int(comp.getLength()),
-                ))
-            results.append(StructDefinition(
-                name=str(dt.getName()),
-                size=int(dt.getLength()),
-                fields=fields,
-            ))
+                fields.append(
+                    StructField(
+                        name=str(comp.getFieldName() or f"field_{i}"),
+                        data_type=str(comp.getDataType().getDisplayName()),
+                        offset=int(comp.getOffset()),
+                        size=int(comp.getLength()),
+                    )
+                )
+            results.append(
+                StructDefinition(
+                    name=str(dt.getName()),
+                    size=int(dt.getLength()),
+                    fields=fields,
+                )
+            )
         return results
 
     def get_type(self, name: str) -> StructDefinition | None:
@@ -458,12 +478,14 @@ class GhidraClient:
         fields = []
         for i in range(resolved.getNumDefinedComponents()):
             comp = resolved.getComponent(i)
-            fields.append(StructField(
-                name=str(comp.getFieldName() or f"field_{i}"),
-                data_type=str(comp.getDataType().getDisplayName()),
-                offset=int(comp.getOffset()),
-                size=int(comp.getLength()),
-            ))
+            fields.append(
+                StructField(
+                    name=str(comp.getFieldName() or f"field_{i}"),
+                    data_type=str(comp.getDataType().getDisplayName()),
+                    offset=int(comp.getOffset()),
+                    size=int(comp.getLength()),
+                )
+            )
         return StructDefinition(
             name=str(resolved.getName()),
             size=int(resolved.getLength()),
@@ -496,14 +518,14 @@ class GhidraClient:
             LongLongDataType,
             PointerDataType,
             ShortDataType,
-            UnsignedIntegerDataType,
-            UnsignedLongDataType,
-            UnsignedLongLongDataType,
-            UnsignedShortDataType,
             Undefined1DataType,
             Undefined2DataType,
             Undefined4DataType,
             Undefined8DataType,
+            UnsignedIntegerDataType,
+            UnsignedLongDataType,
+            UnsignedLongLongDataType,
+            UnsignedShortDataType,
         )
 
         _BUILTIN: dict[str, Any] = {
@@ -528,7 +550,9 @@ class GhidraClient:
 
         if type_name.endswith("*"):
             base_name = type_name.rstrip("* ").strip()
-            base_type = self._resolve_data_type(base_name, self.program.getDefaultPointerSize())
+            base_type = self._resolve_data_type(
+                base_name, self.program.getDefaultPointerSize()
+            )
             return PointerDataType(base_type)
 
         low = type_name.lower().strip()
@@ -564,11 +588,13 @@ class GhidraClient:
             start = int(block.getFirstStartAddress().getOffset())
             end = int(block.getMaxAddress().getOffset())
             instructions = self._disassemble_range(start, end)
-            blocks.append(BasicBlock(
-                start_addr=start,
-                end_addr=end,
-                instructions=instructions,
-            ))
+            blocks.append(
+                BasicBlock(
+                    start_addr=start,
+                    end_addr=end,
+                    instructions=instructions,
+                )
+            )
         return blocks
 
     def get_control_flow_graph(self, addr: int) -> ControlFlowGraph:
@@ -589,11 +615,13 @@ class GhidraClient:
             start = int(block.getFirstStartAddress().getOffset())
             end = int(block.getMaxAddress().getOffset())
             instructions = self._disassemble_range(start, end)
-            blocks.append(BasicBlock(
-                start_addr=start,
-                end_addr=end,
-                instructions=instructions,
-            ))
+            blocks.append(
+                BasicBlock(
+                    start_addr=start,
+                    end_addr=end,
+                    instructions=instructions,
+                )
+            )
 
             dest_iter = block.getDestinations(monitor)
             while dest_iter.hasNext():
@@ -606,11 +634,13 @@ class GhidraClient:
                     continue
                 flow_type = dest_ref.getFlowType()
                 edge_type = self._classify_flow(flow_type)
-                edges.append(BlockEdge(
-                    from_addr=start,
-                    to_addr=dest_addr,
-                    edge_type=edge_type,
-                ))
+                edges.append(
+                    BlockEdge(
+                        from_addr=start,
+                        to_addr=dest_addr,
+                        edge_type=edge_type,
+                    )
+                )
 
         return ControlFlowGraph(
             function_addr=int(func.getEntryPoint().getOffset()),
@@ -642,16 +672,16 @@ class GhidraClient:
                 op = op_iter.next()
                 mnemonic = str(op.getMnemonic())
                 op_addr = int(op.getSeqnum().getTarget().getOffset())
-                inputs = [
-                    str(op.getInput(i)) for i in range(op.getNumInputs())
-                ]
+                inputs = [str(op.getInput(i)) for i in range(op.getNumInputs())]
                 output = str(op.getOutput()) if op.getOutput() is not None else ""
-                ops.append(PcodeOp(
-                    mnemonic=mnemonic,
-                    address=op_addr,
-                    inputs=inputs,
-                    output=output,
-                ))
+                ops.append(
+                    PcodeOp(
+                        mnemonic=mnemonic,
+                        address=op_addr,
+                        inputs=inputs,
+                        output=output,
+                    )
+                )
             return ops
         finally:
             di.dispose()
@@ -684,7 +714,9 @@ class GhidraClient:
 
     def _to_addr(self, addr: int) -> Any:
         """Convert an integer offset to a Ghidra Address."""
-        return self.program.getAddressFactory().getDefaultAddressSpace().getAddress(addr)
+        return (
+            self.program.getAddressFactory().getDefaultAddressSpace().getAddress(addr)
+        )
 
     def _get_function_at(self, addr: int) -> Any:
         """Get Ghidra Function object at an address."""

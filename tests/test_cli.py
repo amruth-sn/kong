@@ -34,12 +34,16 @@ def test_analyze_no_ghidra_installed(tmp_path, monkeypatch):
     binary.write_bytes(b"\x00" * 16)
 
     runner = CliRunner()
-    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}), \
-         patch("kong.config.find_ghidra_install", return_value=None):
+    with (
+        patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}),
+        patch("kong.config.find_ghidra_install", return_value=None),
+    ):
         result = runner.invoke(cli, ["analyze", str(binary)])
 
     assert result.exit_code != 0
-    assert "not installed" in result.output.lower() or "not found" in result.output.lower()
+    assert (
+        "not installed" in result.output.lower() or "not found" in result.output.lower()
+    )
     assert "brew install ghidra" in result.output
 
 
@@ -64,7 +68,12 @@ def test_eval_with_test_data(tmp_path):
         "binary": {"name": "test"},
         "stats": {"llm_calls": 5, "duration_seconds": 10.0, "cost_usd": 0.05},
         "functions": [
-            {"name": "hash_string", "signature": "uint hash_string(byte *str)", "confidence": 95, "address": "0x1000"},
+            {
+                "name": "hash_string",
+                "signature": "uint hash_string(byte *str)",
+                "confidence": 95,
+                "address": "0x1000",
+            },
         ],
     }
     analysis_path = tmp_path / "analysis.json"

@@ -81,7 +81,9 @@ class TestOpenAIClient:
     def test_sends_system_message(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        mock_client.chat.completions.create.return_value = _mock_response('{"name": "f"}')
+        mock_client.chat.completions.create.return_value = _mock_response(
+            '{"name": "f"}'
+        )
 
         client = OpenAIClient(api_key="test-key")
         client.analyze_function("test prompt")
@@ -97,7 +99,9 @@ class TestOpenAIClient:
     def test_uses_json_mode_for_single_analysis(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        mock_client.chat.completions.create.return_value = _mock_response('{"name": "f"}')
+        mock_client.chat.completions.create.return_value = _mock_response(
+            '{"name": "f"}'
+        )
 
         client = OpenAIClient(api_key="test-key")
         client.analyze_function("prompt")
@@ -109,7 +113,9 @@ class TestOpenAIClient:
     def test_model_override(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
-        mock_client.chat.completions.create.return_value = _mock_response('{"name": "f"}')
+        mock_client.chat.completions.create.return_value = _mock_response(
+            '{"name": "f"}'
+        )
 
         client = OpenAIClient(api_key="test-key")
         client.analyze_function("prompt", model="gpt-4o-mini")
@@ -184,10 +190,12 @@ class TestOpenAIBatch:
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
         mock_client.chat.completions.create.return_value = _mock_response(
-            json.dumps([
-                {"address": "0x1000", "name": "foo", "confidence": 80},
-                {"address": "0x2000", "name": "bar", "confidence": 70},
-            ])
+            json.dumps(
+                [
+                    {"address": "0x1000", "name": "foo", "confidence": 80},
+                    {"address": "0x2000", "name": "bar", "confidence": 70},
+                ]
+            )
         )
 
         client = OpenAIClient(api_key="test-key")
@@ -231,19 +239,28 @@ class TestOpenAIToolUse:
 
         final_response = _mock_response(
             '{"name": "clean_func", "confidence": 75}',
-            prompt_tokens=150, completion_tokens=40,
+            prompt_tokens=150,
+            completion_tokens=40,
         )
 
-        mock_client.chat.completions.create.side_effect = [tool_response, final_response]
+        mock_client.chat.completions.create.side_effect = [
+            tool_response,
+            final_response,
+        ]
 
         executor = MagicMock()
         executor.execute.return_value = '{"simplified": "x"}'
 
-        tools = [{
-            "name": "simplify_expression",
-            "description": "Simplify an expression.",
-            "input_schema": {"type": "object", "properties": {"expression": {"type": "string"}}},
-        }]
+        tools = [
+            {
+                "name": "simplify_expression",
+                "description": "Simplify an expression.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"expression": {"type": "string"}},
+                },
+            }
+        ]
 
         client = OpenAIClient(api_key="test-key")
         result = client.analyze_with_tools("prompt", "system", tools, executor)
@@ -251,7 +268,9 @@ class TestOpenAIToolUse:
         assert result.name == "clean_func"
         assert result.input_tokens == 250
         assert result.output_tokens == 60
-        executor.execute.assert_called_once_with("simplify_expression", {"expression": "x + 0"})
+        executor.execute.assert_called_once_with(
+            "simplify_expression", {"expression": "x + 0"}
+        )
 
     @patch("kong.llm.openai_client.openai.OpenAI")
     def test_max_rounds_exhausted_uses_last_content(self, mock_openai_cls):
@@ -278,14 +297,21 @@ class TestOpenAIToolUse:
         executor = MagicMock()
         executor.execute.return_value = '{"result": "ok"}'
 
-        tools = [{
-            "name": "lookup",
-            "description": "Look up a value.",
-            "input_schema": {"type": "object", "properties": {"key": {"type": "string"}}},
-        }]
+        tools = [
+            {
+                "name": "lookup",
+                "description": "Look up a value.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"key": {"type": "string"}},
+                },
+            }
+        ]
 
         client = OpenAIClient(api_key="test-key")
-        result = client.analyze_with_tools("prompt", "system", tools, executor, max_rounds=2)
+        result = client.analyze_with_tools(
+            "prompt", "system", tools, executor, max_rounds=2
+        )
 
         assert result.name == "last_round"
         assert result.confidence == 60
@@ -295,15 +321,17 @@ class TestOpenAIToolUse:
 
 class TestConvertTools:
     def test_converts_anthropic_to_openai_format(self):
-        anthropic_tools = [{
-            "name": "test_tool",
-            "description": "A test tool.",
-            "input_schema": {
-                "type": "object",
-                "properties": {"x": {"type": "string"}},
-                "required": ["x"],
-            },
-        }]
+        anthropic_tools = [
+            {
+                "name": "test_tool",
+                "description": "A test tool.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string"}},
+                    "required": ["x"],
+                },
+            }
+        ]
 
         openai_tools = _convert_tools_to_openai(anthropic_tools)
 
@@ -328,7 +356,8 @@ class TestOpenAICostCalculation:
 
     def test_gpt4o_cached_tokens_cost(self):
         mu = ModelTokenUsage(
-            input_tokens=0, output_tokens=0,
+            input_tokens=0,
+            output_tokens=0,
             cache_read_tokens=1_000_000,
         )
         cost = mu.cost_usd("gpt-4o")

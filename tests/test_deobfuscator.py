@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kong.agent.analyzer import AnalysisContext, LLMResponse
+from kong.agent.analyzer import AnalysisContext, Analyzer, LLMResponse
 from kong.agent.deobfuscator import (
     Deobfuscator,
     ObfuscationType,
@@ -18,13 +18,10 @@ from kong.agent.deobfuscator import (
     load_patterns,
 )
 from kong.agent.models import FunctionResult
-from kong.ghidra.types import BinaryInfo, FunctionInfo
 from kong.agent.prompts import DEOBFUSCATION_SYSTEM_PROMPT
-from kong.llm.tools import DEOBFUSCATION_TOOLS
-from kong.agent.analyzer import Analyzer
 from kong.agent.queue import WorkItem
-from kong.agent.deobfuscator import Deobfuscator
-
+from kong.ghidra.types import BinaryInfo, FunctionInfo
+from kong.llm.tools import DEOBFUSCATION_TOOLS
 
 _CFF_CODE = """\
 void FUN_004015a0(int *data, int len) {
@@ -146,10 +143,12 @@ class TestPatternLibrary:
         assert "Bogus Control Flow" in content
 
     def test_load_multiple_patterns(self):
-        content = load_patterns([
-            ObfuscationType.CONTROL_FLOW_FLATTENING,
-            ObfuscationType.BOGUS_CONTROL_FLOW,
-        ])
+        content = load_patterns(
+            [
+                ObfuscationType.CONTROL_FLOW_FLATTENING,
+                ObfuscationType.BOGUS_CONTROL_FLOW,
+            ]
+        )
         assert "Control Flow Flattening" in content
         assert "Bogus Control Flow" in content
         assert "---" in content
@@ -167,8 +166,11 @@ def _make_context(decompilation: str = "void foo() {}") -> AnalysisContext:
         function=FunctionInfo(address=0x401000, name="FUN_00401000", size=200),
         decompilation=decompilation,
         binary_info=BinaryInfo(
-            arch="x86", format="ELF", endianness="little",
-            word_size=8, compiler="gcc",
+            arch="x86",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="gcc",
         ),
     )
 
@@ -207,7 +209,11 @@ class TestDeobfuscator:
         context = _make_context(_CFF_CODE)
         deob.deobfuscate(context, [ObfuscationType.CONTROL_FLOW_FLATTENING])
         call_kwargs = mock_llm.analyze_with_tools.call_args
-        prompt = call_kwargs.kwargs.get("prompt") or call_kwargs[1].get("prompt") or call_kwargs[0][0]
+        prompt = (
+            call_kwargs.kwargs.get("prompt")
+            or call_kwargs[1].get("prompt")
+            or call_kwargs[0][0]
+        )
         assert "Control Flow Flattening" in prompt or "cff" in prompt.lower()
 
     def test_prompt_includes_technique_list(self, mock_ghidra, mock_llm):
@@ -215,10 +221,17 @@ class TestDeobfuscator:
         context = _make_context(_CFF_CODE)
         deob.deobfuscate(
             context,
-            [ObfuscationType.CONTROL_FLOW_FLATTENING, ObfuscationType.BOGUS_CONTROL_FLOW],
+            [
+                ObfuscationType.CONTROL_FLOW_FLATTENING,
+                ObfuscationType.BOGUS_CONTROL_FLOW,
+            ],
         )
         call_kwargs = mock_llm.analyze_with_tools.call_args
-        prompt = call_kwargs.kwargs.get("prompt") or call_kwargs[1].get("prompt") or call_kwargs[0][0]
+        prompt = (
+            call_kwargs.kwargs.get("prompt")
+            or call_kwargs[1].get("prompt")
+            or call_kwargs[0][0]
+        )
         assert "cff" in prompt
         assert "bogus_cf" in prompt
 
@@ -227,7 +240,11 @@ class TestDeobfuscator:
         context = _make_context()
         deob.deobfuscate(context, [ObfuscationType.BOGUS_CONTROL_FLOW])
         call_kwargs = mock_llm.analyze_with_tools.call_args
-        system = call_kwargs.kwargs.get("system") or call_kwargs[1].get("system") or call_kwargs[0][1]
+        system = (
+            call_kwargs.kwargs.get("system")
+            or call_kwargs[1].get("system")
+            or call_kwargs[0][1]
+        )
         assert system == DEOBFUSCATION_SYSTEM_PROMPT
 
     def test_passes_tools(self, mock_ghidra, mock_llm):
@@ -235,7 +252,11 @@ class TestDeobfuscator:
         context = _make_context()
         deob.deobfuscate(context, [ObfuscationType.INSTRUCTION_SUBSTITUTION])
         call_kwargs = mock_llm.analyze_with_tools.call_args
-        tools = call_kwargs.kwargs.get("tools") or call_kwargs[1].get("tools") or call_kwargs[0][2]
+        tools = (
+            call_kwargs.kwargs.get("tools")
+            or call_kwargs[1].get("tools")
+            or call_kwargs[0][2]
+        )
         assert tools == DEOBFUSCATION_TOOLS
 
 
@@ -263,8 +284,11 @@ class TestAnalyzerDeobfuscationIntegration:
         result = analyzer.analyze(
             item,
             binary_info=BinaryInfo(
-                arch="x86", format="ELF", endianness="little",
-                word_size=8, compiler="gcc",
+                arch="x86",
+                format="ELF",
+                endianness="little",
+                word_size=8,
+                compiler="gcc",
             ),
             known_results={},
             strings=[],
@@ -297,8 +321,11 @@ class TestAnalyzerDeobfuscationIntegration:
         result = analyzer.analyze(
             item,
             binary_info=BinaryInfo(
-                arch="x86", format="ELF", endianness="little",
-                word_size=8, compiler="gcc",
+                arch="x86",
+                format="ELF",
+                endianness="little",
+                word_size=8,
+                compiler="gcc",
             ),
             known_results={},
             strings=[],

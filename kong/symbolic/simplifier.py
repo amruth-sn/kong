@@ -142,11 +142,19 @@ _PRECEDENCE: dict[str, int] = {
     "|": 3,
     "^": 4,
     "&": 5,
-    "==": 6, "!=": 6,
-    "<": 7, ">": 7, "<=": 7, ">=": 7,
-    "<<": 8, ">>": 8,
-    "+": 9, "-": 9,
-    "*": 10, "/": 10, "%": 10,
+    "==": 6,
+    "!=": 6,
+    "<": 7,
+    ">": 7,
+    "<=": 7,
+    ">=": 7,
+    "<<": 8,
+    ">>": 8,
+    "+": 9,
+    "-": 9,
+    "*": 10,
+    "/": 10,
+    "%": 10,
 }
 
 _BINARY_OPS = set(_PRECEDENCE.keys())
@@ -278,9 +286,7 @@ class _ExprParser:
             z3.BitVecVal(0, self.bw),
         )
 
-    def _apply_binary(
-        self, op: str, left: z3.ExprRef, right: z3.ExprRef
-    ) -> z3.ExprRef:
+    def _apply_binary(self, op: str, left: z3.ExprRef, right: z3.ExprRef) -> z3.ExprRef:
         if op in ("&&", "||"):
             lb = self._to_bool(left)
             rb = self._to_bool(right)

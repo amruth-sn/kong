@@ -204,8 +204,10 @@ class Deobfuscator:
         parts.append(f"## Obfuscation Detected: {tech_names}")
         parts.append("")
 
-        parts.append(f"## Target Function: {context.function.name} "
-                     f"(0x{context.function.address:08x})")
+        parts.append(
+            f"## Target Function: {context.function.name} "
+            f"(0x{context.function.address:08x})"
+        )
         parts.append(f"Size: {context.function.size} bytes")
         parts.append("")
         parts.append("### Decompilation")

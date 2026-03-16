@@ -6,8 +6,15 @@ from kong.agent.queue import WorkItem, WorkQueue
 from kong.ghidra.types import FunctionClassification, FunctionInfo
 
 
-def _func(addr: int, name: str, size: int = 100, classification: FunctionClassification = FunctionClassification.MEDIUM) -> FunctionInfo:
-    return FunctionInfo(address=addr, name=name, size=size, classification=classification)
+def _func(
+    addr: int,
+    name: str,
+    size: int = 100,
+    classification: FunctionClassification = FunctionClassification.MEDIUM,
+) -> FunctionInfo:
+    return FunctionInfo(
+        address=addr, name=name, size=size, classification=classification
+    )
 
 
 class TestWorkQueueBasic:
@@ -64,7 +71,7 @@ class TestWorkQueueOrdering:
         callees_map = {
             0x1000: [0x2000],  # a -> b
             0x2000: [0x3000],  # b -> c
-            0x3000: [],        # c is leaf
+            0x3000: [],  # c is leaf
         }
         callers_map = {
             0x1000: [],

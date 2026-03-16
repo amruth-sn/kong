@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kong.agent.models import FunctionResult
-from kong.agent.models import AnalysisStats
+from kong.agent.models import AnalysisStats, FunctionResult
 from kong.export.source import ExportData, export_source
 from kong.ghidra.types import BinaryInfo
 from kong.llm.client import TokenUsage

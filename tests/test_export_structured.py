@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kong.agent.models import FunctionResult
-from kong.agent.models import AnalysisStats
+from kong.agent.models import AnalysisStats, FunctionResult
 from kong.export.source import ExportData
 from kong.export.structured import export_json
 from kong.ghidra.types import BinaryInfo
@@ -102,9 +101,7 @@ def _make_data(
     )
 
 
-def _export_and_load(
-    data: ExportData, tmp_path: Path
-) -> dict[str, object]:
+def _export_and_load(data: ExportData, tmp_path: Path) -> dict[str, object]:
     output = tmp_path / "output.json"
     export_json(data, output)
     return json.loads(output.read_text())
@@ -246,16 +243,25 @@ def test_functions_sorted_by_address(
 ) -> None:
     results = {
         0x5000: FunctionResult(
-            address=0x5000, original_name="FUN_00005000",
-            name="func_c", confidence=80, classification="utility",
+            address=0x5000,
+            original_name="FUN_00005000",
+            name="func_c",
+            confidence=80,
+            classification="utility",
         ),
         0x1000: FunctionResult(
-            address=0x1000, original_name="FUN_00001000",
-            name="func_a", confidence=90, classification="crypto",
+            address=0x1000,
+            original_name="FUN_00001000",
+            name="func_a",
+            confidence=90,
+            classification="crypto",
         ),
         0x3000: FunctionResult(
-            address=0x3000, original_name="FUN_00003000",
-            name="func_b", confidence=70, classification="parser",
+            address=0x3000,
+            original_name="FUN_00003000",
+            name="func_b",
+            confidence=70,
+            classification="parser",
         ),
     }
     data = _make_data(binary_info, stats, token_usage, results)

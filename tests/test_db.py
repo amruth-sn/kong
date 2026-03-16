@@ -58,7 +58,9 @@ class TestSetupHelpers:
         )
         assert get_default_provider() is LLMProvider.OPENAI
 
-    def test_get_default_provider_returns_none_before_setup(self, tmp_path, monkeypatch):
+    def test_get_default_provider_returns_none_before_setup(
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
         assert get_default_provider() is None
 

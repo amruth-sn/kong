@@ -80,12 +80,14 @@ def score(analysis_path: Path, source_path: Path) -> Scorecard:
 
         sym_scores.append(sym_sc)
         type_scores.append(type_sc)
-        per_function.append({
-            "predicted_name": pred["name"],
-            "truth_name": tr["name"] if tr else "",
-            "symbol_accuracy": sym_sc,
-            "type_accuracy": type_sc,
-        })
+        per_function.append(
+            {
+                "predicted_name": pred["name"],
+                "truth_name": tr["name"] if tr else "",
+                "symbol_accuracy": sym_sc,
+                "type_accuracy": type_sc,
+            }
+        )
 
     avg_sym = sum(sym_scores) / len(sym_scores) if sym_scores else 0.0
     avg_type = sum(type_scores) / len(type_scores) if type_scores else 0.0

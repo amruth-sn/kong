@@ -68,12 +68,14 @@ def _format_function(result: FunctionResult, decompilation: str) -> str:
     ]
     if result.comments:
         lines.append(f" * @brief {result.comments}")
-    lines.extend([
-        f" * @confidence {result.confidence}%",
-        f" * @classification {result.classification}",
-        f" * @address 0x{result.address:08x}",
-        " */",
-    ])
+    lines.extend(
+        [
+            f" * @confidence {result.confidence}%",
+            f" * @classification {result.classification}",
+            f" * @address 0x{result.address:08x}",
+            " */",
+        ]
+    )
     lines.append(decompilation)
     return "\n".join(lines)
 
@@ -96,7 +98,11 @@ def export_source(data: ExportData, output_path: Path) -> Path:
 
     sections: dict[str, list[FunctionResult]] = {}
     for result in results:
-        key = result.classification if result.classification in _SECTION_RANK else "unknown"
+        key = (
+            result.classification
+            if result.classification in _SECTION_RANK
+            else "unknown"
+        )
         sections.setdefault(key, []).append(result)
 
     for section_key, section_label in SECTION_ORDER:

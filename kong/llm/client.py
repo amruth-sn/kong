@@ -13,7 +13,12 @@ from typing import Any
 import anthropic
 
 from kong.agent.analyzer import Analyzer, LLMResponse
-from kong.agent.prompts import BATCH_OUTPUT_SCHEMA, BATCH_SYSTEM_PROMPT, OUTPUT_SCHEMA, SYSTEM_PROMPT
+from kong.agent.prompts import (
+    BATCH_OUTPUT_SCHEMA,
+    BATCH_SYSTEM_PROMPT,
+    OUTPUT_SCHEMA,
+    SYSTEM_PROMPT,
+)
 from kong.llm.tools import ToolExecutor
 from kong.llm.usage import TokenUsage
 
@@ -51,11 +56,13 @@ class AnthropicClient:
         message = self._client.messages.create(
             model=effective_model,
             max_tokens=self.max_tokens,
-            system=[{
-                "type": "text",
-                "text": f"{SYSTEM_PROMPT}\n\n{OUTPUT_SCHEMA}",
-                "cache_control": {"type": "ephemeral"},
-            }],
+            system=[
+                {
+                    "type": "text",
+                    "text": f"{SYSTEM_PROMPT}\n\n{OUTPUT_SCHEMA}",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[
                 {
                     "role": "user",
@@ -73,17 +80,21 @@ class AnthropicClient:
         response.raw = raw_text
         return response
 
-    def analyze_function_batch(self, prompt: str, *, model: str | None = None) -> list[LLMResponse]:
+    def analyze_function_batch(
+        self, prompt: str, *, model: str | None = None
+    ) -> list[LLMResponse]:
         """Send a batch analysis prompt and return parsed list of responses."""
         effective_model = model or self.model
         message = self._client.messages.create(
             model=effective_model,
             max_tokens=16384,
-            system=[{
-                "type": "text",
-                "text": f"{BATCH_SYSTEM_PROMPT}\n\n{BATCH_OUTPUT_SCHEMA}",
-                "cache_control": {"type": "ephemeral"},
-            }],
+            system=[
+                {
+                    "type": "text",
+                    "text": f"{BATCH_SYSTEM_PROMPT}\n\n{BATCH_OUTPUT_SCHEMA}",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[
                 {"role": "user", "content": prompt},
             ],
@@ -113,11 +124,13 @@ class AnthropicClient:
         feeds results back.  Repeats until the model returns a final text
         response or *max_rounds* is exhausted.
         """
-        cached_system = [{
-            "type": "text",
-            "text": f"{system}\n\n{OUTPUT_SCHEMA}",
-            "cache_control": {"type": "ephemeral"},
-        }]
+        cached_system = [
+            {
+                "type": "text",
+                "text": f"{system}\n\n{OUTPUT_SCHEMA}",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
 
         messages: list[dict[str, Any]] = [
             {"role": "user", "content": prompt},
@@ -154,11 +167,13 @@ class AnthropicClient:
                 if block.type != "tool_use":
                     continue
                 result_str = tool_executor.execute(block.name, block.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result_str,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_str,
+                    }
+                )
 
             messages.append({"role": "user", "content": tool_results})
 
@@ -186,7 +201,9 @@ class AnthropicClient:
         mu = self.usage._get(effective_model)
         mu.input_tokens += usage.input_tokens
         mu.output_tokens += usage.output_tokens
-        mu.cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        mu.cache_creation_tokens += (
+            getattr(usage, "cache_creation_input_tokens", 0) or 0
+        )
         mu.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
         mu.calls += 1
         logger.debug(

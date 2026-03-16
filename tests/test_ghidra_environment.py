@@ -84,7 +84,9 @@ class TestFindJavaHome:
             return r
 
         with patch.dict(os.environ, {"JAVA_HOME": str(java_home_17)}):
-            with patch("kong.ghidra.environment._java_version", side_effect=mock_version):
+            with patch(
+                "kong.ghidra.environment._java_version", side_effect=mock_version
+            ):
                 with patch("subprocess.run", side_effect=mock_run):
                     assert find_java_home() == str(jdk21_home)
 

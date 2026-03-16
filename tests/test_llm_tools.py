@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kong.llm.client import AnthropicClient
 from kong.llm.tools import (
     DEOBFUSCATION_TOOLS,
     ToolCallRecord,
     ToolExecutor,
 )
-from kong.llm.client import AnthropicClient
 
 
 class TestToolSchemas:
@@ -45,36 +45,48 @@ class TestToolExecutor:
         return ToolExecutor(mock_ghidra)
 
     def test_simplify_expression(self, executor):
-        result = executor.execute("simplify_expression", {
-            "expression": "(x ^ x) == 0",
-        })
+        result = executor.execute(
+            "simplify_expression",
+            {
+                "expression": "(x ^ x) == 0",
+            },
+        )
         data = json.loads(result)
         assert data["is_opaque_predicate"] is True
         assert data["predicate_kind"] == "always_true"
 
     def test_simplify_expression_with_bit_width(self, executor):
-        result = executor.execute("simplify_expression", {
-            "expression": "3 + 5",
-            "bit_width": 64,
-        })
+        result = executor.execute(
+            "simplify_expression",
+            {
+                "expression": "3 + 5",
+                "bit_width": 64,
+            },
+        )
         data = json.loads(result)
         assert data["simplified"] == "8"
 
     def test_eliminate_dead_code(self, executor):
-        result = executor.execute("eliminate_dead_code", {
-            "decompiled_code": "if (x ^ x) { dead(); } live();",
-            "resolved_predicates": [
-                {"expression": "x ^ x", "resolution": "always_false"},
-            ],
-        })
+        result = executor.execute(
+            "eliminate_dead_code",
+            {
+                "decompiled_code": "if (x ^ x) { dead(); } live();",
+                "resolved_predicates": [
+                    {"expression": "x ^ x", "resolution": "always_false"},
+                ],
+            },
+        )
         assert "dead" not in result
         assert "live" in result
 
     def test_get_decompilation(self, executor, mock_ghidra):
         mock_ghidra.get_decompilation.return_value = "void main() {}"
-        result = executor.execute("get_decompilation", {
-            "function_address": 0x401000,
-        })
+        result = executor.execute(
+            "get_decompilation",
+            {
+                "function_address": 0x401000,
+            },
+        )
         assert "void main" in result
         mock_ghidra.get_decompilation.assert_called_once_with(0x401000)
 
@@ -82,18 +94,24 @@ class TestToolExecutor:
         mock_ghidra.get_decompilation.return_value = (
             "int sbox[] = { 0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5 };"
         )
-        result = executor.execute("identify_crypto_constants", {
-            "function_address": 0x401000,
-        })
+        result = executor.execute(
+            "identify_crypto_constants",
+            {
+                "function_address": 0x401000,
+            },
+        )
         data = json.loads(result)
         assert len(data["matches"]) > 0
         assert any("AES" in m["algorithm"] for m in data["matches"])
 
     def test_identify_crypto_constants_no_match(self, executor, mock_ghidra):
         mock_ghidra.get_decompilation.return_value = "void foo() { return; }"
-        result = executor.execute("identify_crypto_constants", {
-            "function_address": 0x401000,
-        })
+        result = executor.execute(
+            "identify_crypto_constants",
+            {
+                "function_address": 0x401000,
+            },
+        )
         data = json.loads(result)
         assert data["matches"] == []
 
@@ -103,9 +121,12 @@ class TestToolExecutor:
 
     def test_handles_execution_error(self, executor, mock_ghidra):
         mock_ghidra.get_decompilation.side_effect = Exception("Ghidra crashed")
-        result = executor.execute("get_decompilation", {
-            "function_address": 0xDEAD,
-        })
+        result = executor.execute(
+            "get_decompilation",
+            {
+                "function_address": 0xDEAD,
+            },
+        )
         assert "Error" in result
         assert executor.call_count == 1
 
@@ -137,19 +158,23 @@ class TestToolUseLoop:
 
     def test_no_tool_calls(self):
 
-        json_response = json.dumps({
-            "name": "simple_func",
-            "signature": "void simple_func(void)",
-            "confidence": 85,
-            "classification": "utility",
-            "comments": "A simple function",
-            "reasoning": "No obfuscation",
-        })
+        json_response = json.dumps(
+            {
+                "name": "simple_func",
+                "signature": "void simple_func(void)",
+                "confidence": 85,
+                "classification": "utility",
+                "comments": "A simple function",
+                "reasoning": "No obfuscation",
+            }
+        )
 
         with patch("kong.llm.client.anthropic") as mock_anthropic:
             mock_client = MagicMock()
             mock_anthropic.Anthropic.return_value = mock_client
-            mock_client.messages.create.return_value = self._mock_text_message(json_response)
+            mock_client.messages.create.return_value = self._mock_text_message(
+                json_response
+            )
 
             client = AnthropicClient(api_key="test")
             executor = ToolExecutor(MagicMock())
@@ -164,14 +189,16 @@ class TestToolUseLoop:
 
     def test_single_tool_call(self):
 
-        json_response = json.dumps({
-            "name": "deobfuscated_func",
-            "signature": "int deobfuscated_func(int x)",
-            "confidence": 72,
-            "classification": "crypto",
-            "comments": "Deobfuscated",
-            "reasoning": "Used simplifier",
-        })
+        json_response = json.dumps(
+            {
+                "name": "deobfuscated_func",
+                "signature": "int deobfuscated_func(int x)",
+                "confidence": 72,
+                "classification": "crypto",
+                "comments": "Deobfuscated",
+                "reasoning": "Used simplifier",
+            }
+        )
 
         tool_msg = self._mock_tool_use_message(
             "simplify_expression",

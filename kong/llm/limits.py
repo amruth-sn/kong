@@ -92,9 +92,7 @@ class RateLimiter:
                     total_tokens = sum(n for _, n in self._token_log)
                     if total_tokens + estimated_tokens > self._tpm:
                         sleep_until = (
-                            self._token_log[0][0] + 60.0
-                            if self._token_log
-                            else now
+                            self._token_log[0][0] + 60.0 if self._token_log else now
                         )
                         wait = max(wait, sleep_until - now)
 

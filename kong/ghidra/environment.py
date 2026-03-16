@@ -20,7 +20,9 @@ def _java_version(java_home: str) -> int | None:
     try:
         result = subprocess.run(
             [str(java_bin), "-version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         # `java -version` prints to stderr, e.g. 'openjdk version "21.0.2"'
         output = result.stderr or result.stdout
@@ -51,7 +53,9 @@ def find_java_home(min_version: int = 21) -> str | None:
     try:
         result = subprocess.run(
             ["/usr/libexec/java_home", "-v", "21+"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             java_home = result.stdout.strip()
@@ -67,7 +71,9 @@ def find_java_home(min_version: int = 21) -> str | None:
         try:
             result = subprocess.run(
                 ["brew", "--prefix", pkg],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0:
                 prefix = Path(result.stdout.strip())
@@ -103,7 +109,9 @@ def find_ghidra_install() -> str | None:
     try:
         result = subprocess.run(
             ["brew", "--prefix", "ghidra"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             prefix = Path(result.stdout.strip())

@@ -112,6 +112,7 @@ class TestAnalyzeSetupGate:
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
         monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test")
         from kong.db import save_setup
+
         save_setup(
             enabled=[LLMProvider.ANTHROPIC, LLMProvider.OPENAI],
             default=LLMProvider.ANTHROPIC,
@@ -126,7 +127,10 @@ class TestAnalyzeSetupGate:
                 cli, ["analyze", str(binary), "--provider", "openai"]
             )
 
-        assert "not installed" in result.output.lower() or "not found" in result.output.lower()
+        assert (
+            "not installed" in result.output.lower()
+            or "not found" in result.output.lower()
+        )
 
     def test_analyze_falls_back_to_available_key(self, tmp_path, monkeypatch):
         """When default provider key is missing, falls back to another enabled provider."""
@@ -134,6 +138,7 @@ class TestAnalyzeSetupGate:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test")
         from kong.db import save_setup
+
         save_setup(
             enabled=[LLMProvider.ANTHROPIC, LLMProvider.OPENAI],
             default=LLMProvider.ANTHROPIC,
@@ -146,13 +151,17 @@ class TestAnalyzeSetupGate:
         with patch("kong.config.find_ghidra_install", return_value=None):
             result = runner.invoke(cli, ["analyze", str(binary)])
 
-        assert "not installed" in result.output.lower() or "not found" in result.output.lower()
+        assert (
+            "not installed" in result.output.lower()
+            or "not found" in result.output.lower()
+        )
 
     def test_analyze_fails_when_no_keys(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         from kong.db import save_setup
+
         save_setup(
             enabled=[LLMProvider.ANTHROPIC],
             default=LLMProvider.ANTHROPIC,
@@ -166,4 +175,6 @@ class TestAnalyzeSetupGate:
             result = runner.invoke(cli, ["analyze", str(binary)])
 
         assert result.exit_code != 0
-        assert "no api keys" in result.output.lower() or "setup" in result.output.lower()
+        assert (
+            "no api keys" in result.output.lower() or "setup" in result.output.lower()
+        )

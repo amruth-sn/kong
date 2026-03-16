@@ -6,12 +6,12 @@ import json
 from unittest.mock import MagicMock, patch
 
 from kong.agent.analyzer import (
-    Analyzer,
     AnalysisContext,
+    Analyzer,
     LLMResponse,
 )
-from kong.agent.queue import WorkItem
 from kong.agent.models import FunctionResult
+from kong.agent.queue import WorkItem
 from kong.ghidra.types import (
     BinaryInfo,
     FunctionClassification,
@@ -23,7 +23,9 @@ from kong.ghidra.types import (
 
 def _func(addr=0x1000, name="FUN_00001000", size=100):
     return FunctionInfo(
-        address=addr, name=name, size=size,
+        address=addr,
+        name=name,
+        size=size,
         classification=FunctionClassification.MEDIUM,
     )
 
@@ -38,8 +40,11 @@ def _item(addr=0x1000, name="FUN_00001000", callers=None, callees=None):
 
 def _binary_info():
     return BinaryInfo(
-        arch="x86-64", format="ELF", endianness="little",
-        word_size=8, compiler="GCC",
+        arch="x86-64",
+        format="ELF",
+        endianness="little",
+        word_size=8,
+        compiler="GCC",
     )
 
 
@@ -170,7 +175,8 @@ class TestAnalyzerContext:
         llm = _mock_llm(LLMResponse(name="f"))
         client = _mock_client()
         client.get_decompilation.side_effect = lambda addr: (
-            "void callee() { stuff; }" if addr == 0x2000
+            "void callee() { stuff; }"
+            if addr == 0x2000
             else "void target() { callee(); }"
         )
 
@@ -186,7 +192,8 @@ class TestAnalyzerContext:
         llm = _mock_llm(LLMResponse(name="f"))
         client = _mock_client()
         client.get_decompilation.side_effect = lambda addr: (
-            "void caller() { target(); }" if addr == 0x3000
+            "void caller() { target(); }"
+            if addr == 0x3000
             else "void target() { return; }"
         )
 
@@ -217,8 +224,10 @@ class TestAnalyzerContext:
 
         known = {
             0x2000: FunctionResult(
-                address=0x2000, original_name="FUN_2000",
-                name="rc4_init", confidence=90,
+                address=0x2000,
+                original_name="FUN_2000",
+                name="rc4_init",
+                confidence=90,
             ),
         }
 
@@ -237,8 +246,10 @@ class TestAnalyzerContext:
 
         known = {
             0x2000: FunctionResult(
-                address=0x2000, original_name="FUN_2000",
-                name="malloc_wrapper", confidence=80,
+                address=0x2000,
+                original_name="FUN_2000",
+                name="malloc_wrapper",
+                confidence=80,
             ),
         }
 
@@ -357,8 +368,12 @@ class TestBuildBatchPrompt:
         analyzer = Analyzer(client, llm)
 
         binary_info = BinaryInfo(
-            arch="x86", format="ELF", endianness="little",
-            word_size=8, compiler="gcc", name="test",
+            arch="x86",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="gcc",
+            name="test",
         )
 
         contexts = []
@@ -385,12 +400,28 @@ class TestBuildBatchPrompt:
 
 class TestParseBatchJson:
     def test_parses_json_array(self) -> None:
-        raw = json.dumps([
-            {"address": "0x1000", "name": "foo", "signature": "void foo(void)",
-             "confidence": 85, "classification": "utility", "comments": "", "reasoning": ""},
-            {"address": "0x2000", "name": "bar", "signature": "int bar(int x)",
-             "confidence": 70, "classification": "math", "comments": "", "reasoning": ""},
-        ])
+        raw = json.dumps(
+            [
+                {
+                    "address": "0x1000",
+                    "name": "foo",
+                    "signature": "void foo(void)",
+                    "confidence": 85,
+                    "classification": "utility",
+                    "comments": "",
+                    "reasoning": "",
+                },
+                {
+                    "address": "0x2000",
+                    "name": "bar",
+                    "signature": "int bar(int x)",
+                    "confidence": 70,
+                    "classification": "math",
+                    "comments": "",
+                    "reasoning": "",
+                },
+            ]
+        )
         results = Analyzer.parse_llm_json_batch(raw)
         assert len(results) == 2
         assert results[0].name == "foo"

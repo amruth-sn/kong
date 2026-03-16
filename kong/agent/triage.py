@@ -20,8 +20,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CallGraph:
     """Adjacency lists for the call graph."""
-    callers: dict[int, list[int]] = field(default_factory=dict)  # addr -> [caller addrs]
-    callees: dict[int, list[int]] = field(default_factory=dict)  # addr -> [callee addrs]
+
+    callers: dict[int, list[int]] = field(
+        default_factory=dict
+    )  # addr -> [caller addrs]
+    callees: dict[int, list[int]] = field(
+        default_factory=dict
+    )  # addr -> [callee addrs]
 
     @property
     def edge_count(self) -> int:
@@ -31,6 +36,7 @@ class CallGraph:
 @dataclass
 class LanguageHints:
     """Detected language and compiler hints from binary analysis."""
+
     compiler: str = "unknown"
     language: str = "C"  # C, C++, Go, Rust
     indicators: list[str] = field(default_factory=list)
@@ -39,6 +45,7 @@ class LanguageHints:
 @dataclass
 class TriageResult:
     """Complete output of the triage phase."""
+
     binary_info: BinaryInfo
     functions: list[FunctionInfo]
     strings: list[StringEntry]
@@ -134,8 +141,7 @@ class TriageAgent:
 
         # Go detection
         go_indicators = [
-            n for n in names
-            if n.startswith("runtime.") or n.startswith("main.main")
+            n for n in names if n.startswith("runtime.") or n.startswith("main.main")
         ]
         if go_indicators:
             hints.language = "Go"
@@ -150,14 +156,17 @@ class TriageAgent:
         # C++ detection (if not Go/Rust)
         if hints.language == "C":
             cpp_indicators = [
-                n for n in names
+                n
+                for n in names
                 if n.startswith("_ZN") or n.startswith("_ZSt") or n.startswith("std::")
             ]
             vtable_strings = [s for s in string_values if "vtable" in s.lower()]
             if cpp_indicators or vtable_strings:
                 hints.language = "C++"
                 if cpp_indicators:
-                    hints.indicators.append(f"C++ mangled symbols: {len(cpp_indicators)}")
+                    hints.indicators.append(
+                        f"C++ mangled symbols: {len(cpp_indicators)}"
+                    )
                 if vtable_strings:
                     hints.indicators.append(f"vtable references: {len(vtable_strings)}")
 

@@ -14,7 +14,12 @@ from typing import Any
 import openai
 
 from kong.agent.analyzer import Analyzer, LLMResponse
-from kong.agent.prompts import BATCH_OUTPUT_SCHEMA, BATCH_SYSTEM_PROMPT, OUTPUT_SCHEMA, SYSTEM_PROMPT
+from kong.agent.prompts import (
+    BATCH_OUTPUT_SCHEMA,
+    BATCH_SYSTEM_PROMPT,
+    OUTPUT_SCHEMA,
+    SYSTEM_PROMPT,
+)
 from kong.llm.tools import ToolExecutor
 from kong.llm.usage import TokenUsage
 
@@ -83,14 +88,19 @@ class OpenAIClient:
         result.raw = raw_text
         return result
 
-    def analyze_function_batch(self, prompt: str, *, model: str | None = None) -> list[LLMResponse]:
+    def analyze_function_batch(
+        self, prompt: str, *, model: str | None = None
+    ) -> list[LLMResponse]:
         """Send a batch analysis prompt and return parsed list of responses."""
         effective_model = model or self.model
         response = self._client.chat.completions.create(
             model=effective_model,
             max_tokens=16384,
             messages=[
-                {"role": "system", "content": f"{BATCH_SYSTEM_PROMPT}\n\n{BATCH_OUTPUT_SCHEMA}"},
+                {
+                    "role": "system",
+                    "content": f"{BATCH_SYSTEM_PROMPT}\n\n{BATCH_OUTPUT_SCHEMA}",
+                },
                 {"role": "user", "content": prompt},
             ],
         )
@@ -173,11 +183,13 @@ class OpenAIClient:
             for tool_call in choice.message.tool_calls:
                 arguments = json.loads(tool_call.function.arguments)
                 result_str = tool_executor.execute(tool_call.function.name, arguments)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result_str,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result_str,
+                    }
+                )
 
         result = Analyzer.parse_llm_json(last_text)
         result.input_tokens = total_input
@@ -195,16 +207,18 @@ class OpenAIClient:
         mu = self.usage._get(effective_model)
         mu.input_tokens += usage.prompt_tokens
         mu.output_tokens += usage.completion_tokens
-        cached = getattr(
-            getattr(usage, "prompt_tokens_details", None),
-            "cached_tokens",
-            0,
-        ) or 0
+        cached = (
+            getattr(
+                getattr(usage, "prompt_tokens_details", None),
+                "cached_tokens",
+                0,
+            )
+            or 0
+        )
         mu.cache_read_tokens += cached
         mu.calls += 1
         logger.debug(
-            "LLM [%s]: %d in / %d out / %d cached tokens "
-            "(total: %d calls, $%.4f)",
+            "LLM [%s]: %d in / %d out / %d cached tokens (total: %d calls, $%.4f)",
             effective_model,
             usage.prompt_tokens,
             usage.completion_tokens,

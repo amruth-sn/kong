@@ -7,6 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from kong.evals.harness import (
+    GroundTruth,
+    Scorecard,
+    extract_ground_truth,
+    load_analysis,
+    match_functions,
+    score,
+)
 from kong.evals.metrics import (
     _normalize_name,
     _normalize_type,
@@ -15,14 +23,6 @@ from kong.evals.metrics import (
     overall_score,
     symbol_accuracy,
     type_accuracy,
-)
-from kong.evals.harness import (
-    GroundTruth,
-    Scorecard,
-    extract_ground_truth,
-    load_analysis,
-    match_functions,
-    score,
 )
 
 
@@ -187,15 +187,15 @@ class TestExtractGroundTruth:
     def test_extracts_from_c_source(self, tmp_path: Path) -> None:
         c_source = tmp_path / "test.c"
         c_source.write_text(
-            '#include <stdio.h>\n'
-            '\n'
-            'int add(int a, int b) {\n'
-            '    return a + b;\n'
-            '}\n'
-            '\n'
-            'void greet(const char *name) {\n'
+            "#include <stdio.h>\n"
+            "\n"
+            "int add(int a, int b) {\n"
+            "    return a + b;\n"
+            "}\n"
+            "\n"
+            "void greet(const char *name) {\n"
             '    printf("Hello, %s\\n", name);\n'
-            '}\n'
+            "}\n"
         )
         truth = extract_ground_truth(c_source)
         assert isinstance(truth, GroundTruth)
@@ -206,11 +206,7 @@ class TestExtractGroundTruth:
 
     def test_extracts_static_functions(self, tmp_path: Path) -> None:
         c_source = tmp_path / "static.c"
-        c_source.write_text(
-            'static int helper(int x) {\n'
-            '    return x * 2;\n'
-            '}\n'
-        )
+        c_source.write_text("static int helper(int x) {\n    return x * 2;\n}\n")
         truth = extract_ground_truth(c_source)
         assert len(truth.functions) == 1
         assert truth.functions[0]["name"] == "helper"
@@ -218,13 +214,13 @@ class TestExtractGroundTruth:
     def test_extracts_pointer_return_types(self, tmp_path: Path) -> None:
         c_source = tmp_path / "ptr.c"
         c_source.write_text(
-            'char *reverse_string(const char *s) {\n'
-            '    return NULL;\n'
-            '}\n'
-            '\n'
-            'node_t *find(int key) {\n'
-            '    return NULL;\n'
-            '}\n'
+            "char *reverse_string(const char *s) {\n"
+            "    return NULL;\n"
+            "}\n"
+            "\n"
+            "node_t *find(int key) {\n"
+            "    return NULL;\n"
+            "}\n"
         )
         truth = extract_ground_truth(c_source)
         assert len(truth.functions) == 2
@@ -235,15 +231,15 @@ class TestExtractGroundTruth:
     def test_does_not_match_control_flow(self, tmp_path: Path) -> None:
         c_source = tmp_path / "control.c"
         c_source.write_text(
-            'void foo(void) {\n'
-            '    while(1) {\n'
-            '        break;\n'
-            '    }\n'
-            '    for(int i = 0; i < 10; i++) {\n'
-            '    }\n'
-            '    if(x) {\n'
-            '    }\n'
-            '}\n'
+            "void foo(void) {\n"
+            "    while(1) {\n"
+            "        break;\n"
+            "    }\n"
+            "    for(int i = 0; i < 10; i++) {\n"
+            "    }\n"
+            "    if(x) {\n"
+            "    }\n"
+            "}\n"
         )
         truth = extract_ground_truth(c_source)
         names = [f["name"] for f in truth.functions]
@@ -253,11 +249,7 @@ class TestExtractGroundTruth:
 
     def test_extracts_signature(self, tmp_path: Path) -> None:
         c_source = tmp_path / "sig.c"
-        c_source.write_text(
-            'char * strdup(const char * src) {\n'
-            '    return NULL;\n'
-            '}\n'
-        )
+        c_source.write_text("char * strdup(const char * src) {\n    return NULL;\n}\n")
         truth = extract_ground_truth(c_source)
         assert len(truth.functions) == 1
         assert "char" in truth.functions[0]["signature"]
@@ -356,13 +348,13 @@ class TestScorecard:
 
         c_source = tmp_path / "source.c"
         c_source.write_text(
-            'int add(int a, int b) {\n'
-            '    return a + b;\n'
-            '}\n'
-            '\n'
-            'int sub(int a, int b) {\n'
-            '    return a - b;\n'
-            '}\n'
+            "int add(int a, int b) {\n"
+            "    return a + b;\n"
+            "}\n"
+            "\n"
+            "int sub(int a, int b) {\n"
+            "    return a - b;\n"
+            "}\n"
         )
 
         result = score(analysis_path, c_source)

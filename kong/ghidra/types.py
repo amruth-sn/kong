@@ -120,6 +120,7 @@ class StructDefinition:
 @dataclass
 class PcodeOp:
     """A single pcode operation within a basic block."""
+
     mnemonic: str
     address: int
     inputs: list[str] = field(default_factory=list)
@@ -129,6 +130,7 @@ class PcodeOp:
 @dataclass
 class BasicBlock:
     """A basic block within a function's control flow graph."""
+
     start_addr: int
     end_addr: int
     instructions: list[str] = field(default_factory=list)
@@ -154,6 +156,7 @@ class BlockEdgeType(Enum):
 @dataclass
 class BlockEdge:
     """A directed edge in the control flow graph."""
+
     from_addr: int
     to_addr: int
     edge_type: BlockEdgeType = BlockEdgeType.UNKNOWN
@@ -162,6 +165,7 @@ class BlockEdge:
 @dataclass
 class ControlFlowGraph:
     """Control flow graph for a single function."""
+
     function_addr: int
     blocks: list[BasicBlock] = field(default_factory=list)
     edges: list[BlockEdge] = field(default_factory=list)

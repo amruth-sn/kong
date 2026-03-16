@@ -7,7 +7,11 @@ from dataclasses import dataclass
 import pytest
 
 from kong.agent.models import FunctionResult
-from kong.synthesis.semantic import SemanticSynthesizer, SynthesisResult, SYNTHESIS_FUNCTION_CAP
+from kong.synthesis.semantic import (
+    SYNTHESIS_FUNCTION_CAP,
+    SemanticSynthesizer,
+    SynthesisResult,
+)
 
 
 @dataclass
@@ -106,7 +110,10 @@ class TestGlobalExtraction:
 
 class TestPromptBuilding:
     def test_includes_multi_use_globals(self) -> None:
-        results = [_make_result(0x401000, "process_data"), _make_result(0x402000, "compute")]
+        results = [
+            _make_result(0x401000, "process_data"),
+            _make_result(0x402000, "compute"),
+        ]
         decompilations = {0x401000: SAMPLE_DECOMP_A, 0x402000: SAMPLE_DECOMP_B}
         synth = SemanticSynthesizer(FakeLLMClient())
         prompt = synth._build_synthesis_prompt(results, decompilations)
@@ -115,7 +122,10 @@ class TestPromptBuilding:
         assert "process_data" in prompt or "compute" in prompt
 
     def test_excludes_single_use_globals(self) -> None:
-        results = [_make_result(0x401000, "process_data"), _make_result(0x402000, "compute")]
+        results = [
+            _make_result(0x401000, "process_data"),
+            _make_result(0x402000, "compute"),
+        ]
         decompilations = {0x401000: SAMPLE_DECOMP_A, 0x402000: SAMPLE_DECOMP_B}
         synth = SemanticSynthesizer(FakeLLMClient())
         prompt = synth._build_synthesis_prompt(results, decompilations)
@@ -143,11 +153,11 @@ class TestPromptBuilding:
 
 class TestResponseParsing:
     def test_parse_valid_json(self) -> None:
-        raw = '''{
+        raw = """{
             "globals": {"DAT_100008000": "g_counter"},
             "structs": [{"name": "Point", "fields": [{"name": "x", "type": "int", "offset": 0}]}],
             "name_refinements": {"0x00401000": "init_counter"}
-        }'''
+        }"""
         result = SemanticSynthesizer._parse_response(raw)
         assert result.globals == {"DAT_100008000": "g_counter"}
         assert len(result.structs) == 1
@@ -155,7 +165,7 @@ class TestResponseParsing:
         assert result.name_refinements == {"0x00401000": "init_counter"}
 
     def test_parse_json_in_markdown_fence(self) -> None:
-        raw = '''Some preamble text
+        raw = """Some preamble text
 ```json
 {
     "globals": {"DAT_100008000": "g_config"},
@@ -163,7 +173,7 @@ class TestResponseParsing:
     "name_refinements": {}
 }
 ```
-Trailing text'''
+Trailing text"""
         result = SemanticSynthesizer._parse_response(raw)
         assert result.globals == {"DAT_100008000": "g_config"}
 
@@ -198,7 +208,9 @@ class TestSynthesisCap:
         decomps = {}
         for i in range(60):
             if i < 5:
-                decomps[i] = f"void func_{i}(void) {{ DAT_A = 1; DAT_B = 2; DAT_C = 3; }}"
+                decomps[i] = (
+                    f"void func_{i}(void) {{ DAT_A = 1; DAT_B = 2; DAT_C = 3; }}"
+                )
             else:
                 decomps[i] = f"void func_{i}(void) {{ return; }}"
 
@@ -241,15 +253,18 @@ class TestGlobalApplication:
 
 class TestSynthesizeIntegration:
     def test_synthesize_calls_llm_and_returns_result(self) -> None:
-        raw_response = '''{
+        raw_response = """{
             "globals": {"DAT_100008000": "g_state"},
             "structs": [],
             "name_refinements": {"0x00401000": "initialize_state"}
-        }'''
+        }"""
         llm = FakeLLMClient(raw_response=raw_response)
         synth = SemanticSynthesizer(llm)
 
-        results = [_make_result(0x401000, "process_data"), _make_result(0x402000, "compute")]
+        results = [
+            _make_result(0x401000, "process_data"),
+            _make_result(0x402000, "compute"),
+        ]
         decompilations = {0x401000: SAMPLE_DECOMP_A, 0x402000: SAMPLE_DECOMP_B}
 
         synthesis = synth.synthesize(results, decompilations)
@@ -260,7 +275,9 @@ class TestSynthesizeIntegration:
         assert synthesis.name_refinements == {"0x00401000": "initialize_state"}
 
     def test_synthesize_with_model_override(self) -> None:
-        llm = FakeLLMClient(raw_response='{"globals": {}, "structs": [], "name_refinements": {}}')
+        llm = FakeLLMClient(
+            raw_response='{"globals": {}, "structs": [], "name_refinements": {}}'
+        )
         synth = SemanticSynthesizer(llm)
 
         results = [_make_result(0x401000)]

@@ -24,15 +24,18 @@ from kong.banner import (
     print_banner,
 )
 from kong.config import GhidraConfig, KongConfig, LLMConfig, LLMProvider, OutputConfig
-from kong.db import get_default_provider, get_enabled_providers, is_setup_complete, save_setup
+from kong.db import (
+    get_default_provider,
+    get_enabled_providers,
+    is_setup_complete,
+    save_setup,
+)
 from kong.evals.harness import score as eval_score
 from kong.ghidra.client import GhidraClient, GhidraClientError
-from kong.llm.usage import TokenUsage
-from kong.banner import _ENV_VARS, _KEY_EXAMPLES, _KEY_URLS
-from kong.llm.openai_client import OpenAIClient
 from kong.llm.client import AnthropicClient
+from kong.llm.openai_client import OpenAIClient
+from kong.llm.usage import TokenUsage
 from kong.tui.app import KongApp
-
 
 if TYPE_CHECKING:
     from kong.agent.analyzer import LLMClient
@@ -124,8 +127,7 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
         for model_name, mu in usage.by_model.items():
             short_name = model_name.split("-")[1] if "-" in model_name else model_name
             console.print(
-                f"  {short_name}: {mu.calls} calls, "
-                f"${mu.cost_usd(model_name):.4f}"
+                f"  {short_name}: {mu.calls} calls, ${mu.cost_usd(model_name):.4f}"
             )
     total_cost = getattr(llm_client, "total_cost_usd", 0.0)
     console.print(f"[bold]Cost:[/bold] ${total_cost:.4f}")
@@ -136,13 +138,15 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
 @click.argument("binary", type=click.Path(exists=True, dir_okay=False))
 @click.option("--headless", is_flag=True, help="Run without TUI (for CI/Docker).")
 @click.option(
-    "--output", "-o",
+    "--output",
+    "-o",
     type=click.Path(),
     default="./kong_output",
     help="Output directory.",
 )
 @click.option(
-    "--format", "-f",
+    "--format",
+    "-f",
     "formats",
     type=click.Choice(["source", "json", "ghidra"], case_sensitive=False),
     multiple=True,
@@ -151,7 +155,8 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
 )
 @click.option("--ghidra-dir", default=None, help="Ghidra installation directory.")
 @click.option(
-    "--provider", "-p",
+    "--provider",
+    "-p",
     type=click.Choice([p.value for p in LLMProvider], case_sensitive=False),
     default=None,
     help="LLM provider (anthropic or openai). Uses configured default if omitted.",
@@ -261,7 +266,7 @@ def analyze(
 @click.option("--ghidra-dir", default=None, help="Ghidra installation directory.")
 def info(binary: str, ghidra_dir: str | None) -> None:
     """Show info about a binary."""
-    
+
     ghidra_config = GhidraConfig(install_dir=ghidra_dir)
     if not ghidra_config.install_dir:
         console.print("[red]Ghidra is not installed or not found.[/red]")
@@ -334,7 +339,9 @@ def setup() -> None:
         if check_api_key(p):
             key = os.environ.get(env_var, "")
             masked = key[:7] + "..." + key[-4:] if len(key) > 11 else "***"
-            console.print(f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] ({masked})")
+            console.print(
+                f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] ({masked})"
+            )
             any_key_found = True
         else:
             console.print(f"  {_PROVIDER_LABELS[p]:25s} [yellow]Not set[/yellow]")
@@ -381,7 +388,9 @@ def setup() -> None:
             f"[bold green]All set![/bold green] Default provider: "
             f"[bold]{_PROVIDER_LABELS[default_provider]}[/bold]"
         )
-        console.print("Run [bold cyan]kong analyze <binary>[/bold cyan] to get started.")
+        console.print(
+            "Run [bold cyan]kong analyze <binary>[/bold cyan] to get started."
+        )
     else:
         console.print(
             "[yellow]Setup saved, but some dependencies are missing. "
@@ -400,7 +409,9 @@ def eval_cmd(analysis_json: str, source_file: str) -> None:
     )
 
     console.print(f"[bold]Binary:[/bold] {scorecard.binary}")
-    console.print(f"[bold]Functions:[/bold] {scorecard.functions_analyzed} analyzed / {scorecard.total_functions} in source")
+    console.print(
+        f"[bold]Functions:[/bold] {scorecard.functions_analyzed} analyzed / {scorecard.total_functions} in source"
+    )
     console.print(f"[bold]Symbol Accuracy:[/bold] {scorecard.symbol_accuracy:.1%}")
     console.print(f"[bold]Type Accuracy:[/bold] {scorecard.type_accuracy:.1%}")
     console.print()
@@ -411,8 +422,16 @@ def eval_cmd(analysis_json: str, source_file: str) -> None:
         truth = pf["truth_name"]
         sym = pf["symbol_accuracy"]
         typ = pf["type_accuracy"]
-        match_indicator = "[green]OK[/green]" if sym >= 0.8 else "[yellow]~~[/yellow]" if sym > 0 else "[red]NO[/red]"
-        console.print(f"  {match_indicator} {pred:30s} -> {truth:20s}  sym={sym:.2f}  type={typ:.2f}")
+        match_indicator = (
+            "[green]OK[/green]"
+            if sym >= 0.8
+            else "[yellow]~~[/yellow]"
+            if sym > 0
+            else "[red]NO[/red]"
+        )
+        console.print(
+            f"  {match_indicator} {pred:30s} -> {truth:20s}  sym={sym:.2f}  type={typ:.2f}"
+        )
 
     console.print()
     console.print(f"[bold]LLM Calls:[/bold] {scorecard.llm_calls}")

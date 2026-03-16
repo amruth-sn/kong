@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-
 _SYNONYM_GROUPS: list[set[str]] = [
     {"search", "find", "lookup"},
     {"node", "entry", "element"},
@@ -114,7 +113,7 @@ def _normalize_type(type_str: str) -> str:
     stripped = " ".join(stripped.split())
 
     base = stripped.rstrip("*").rstrip()
-    stars = stripped[len(base):]
+    stars = stripped[len(base) :]
 
     resolved = _TYPE_ALIASES.get(base, base)
     return (resolved + stars).strip()
@@ -173,7 +172,8 @@ def type_accuracy(predicted_sig: str, truth_sig: str) -> float:
 
     if pred_params and truth_params:
         match_count = sum(
-            1 for p, t in zip(pred_params, truth_params)
+            1
+            for p, t in zip(pred_params, truth_params)
             if _normalize_type(p) == _normalize_type(t)
         )
         max_params = max(len(pred_params), len(truth_params))

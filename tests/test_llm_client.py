@@ -133,6 +133,7 @@ class TestAnthropicClient:
         assert response.name == ""
         assert "Failed to parse" in response.reasoning
 
+
 class TestModelTokenUsage:
     def test_cost_calculation(self):
         u = ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
@@ -146,8 +147,10 @@ class TestModelTokenUsage:
 
     def test_cache_token_costs(self):
         u = ModelTokenUsage(
-            input_tokens=0, output_tokens=0,
-            cache_creation_tokens=1_000_000, cache_read_tokens=1_000_000,
+            input_tokens=0,
+            output_tokens=0,
+            cache_creation_tokens=1_000_000,
+            cache_read_tokens=1_000_000,
         )
         cost = u.cost_usd("claude-opus-4-6")
         assert cost == (5.0 * 1.25) + (5.0 * 0.10)
@@ -182,19 +185,30 @@ class TestAnalyzeFunctionBatch:
     def test_batch_returns_list_of_responses(self) -> None:
         mock_anthropic = MagicMock()
         mock_message = MagicMock()
-        mock_message.content = [MagicMock(type="text", text=json.dumps([
-            {"address": "0x1000", "name": "foo", "confidence": 80},
-            {"address": "0x2000", "name": "bar", "confidence": 70},
-        ]))]
+        mock_message.content = [
+            MagicMock(
+                type="text",
+                text=json.dumps(
+                    [
+                        {"address": "0x1000", "name": "foo", "confidence": 80},
+                        {"address": "0x2000", "name": "bar", "confidence": 70},
+                    ]
+                ),
+            )
+        ]
         mock_message.usage = MagicMock(
-            input_tokens=100, output_tokens=50,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
         )
         mock_anthropic.messages.create.return_value = mock_message
 
         client = AnthropicClient(api_key="test")
         client._client = mock_anthropic
-        results = client.analyze_function_batch("batch prompt", model="claude-haiku-4-5-20251001")
+        results = client.analyze_function_batch(
+            "batch prompt", model="claude-haiku-4-5-20251001"
+        )
 
         assert len(results) == 2
         assert results[0].name == "foo"
@@ -203,10 +217,14 @@ class TestAnalyzeFunctionBatch:
     def test_batch_uses_batch_system_prompt(self) -> None:
         mock_anthropic = MagicMock()
         mock_message = MagicMock()
-        mock_message.content = [MagicMock(type="text", text='[{"name": "f", "confidence": 50}]')]
+        mock_message.content = [
+            MagicMock(type="text", text='[{"name": "f", "confidence": 50}]')
+        ]
         mock_message.usage = MagicMock(
-            input_tokens=100, output_tokens=50,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
         )
         mock_anthropic.messages.create.return_value = mock_message
 
@@ -221,10 +239,14 @@ class TestAnalyzeFunctionBatch:
     def test_batch_records_usage(self) -> None:
         mock_anthropic = MagicMock()
         mock_message = MagicMock()
-        mock_message.content = [MagicMock(type="text", text='[{"name": "f", "confidence": 50}]')]
+        mock_message.content = [
+            MagicMock(type="text", text='[{"name": "f", "confidence": 50}]')
+        ]
         mock_message.usage = MagicMock(
-            input_tokens=500, output_tokens=200,
-            cache_creation_input_tokens=100, cache_read_input_tokens=50,
+            input_tokens=500,
+            output_tokens=200,
+            cache_creation_input_tokens=100,
+            cache_read_input_tokens=50,
         )
         mock_anthropic.messages.create.return_value = mock_message
 

@@ -137,7 +137,9 @@ class TestListFunctions:
             _mock_function(0x401100, "FUN_00401100", 10),
             _mock_function(0x401200, "puts", 4, is_thunk=True),
         ]
-        client.program.getFunctionManager.return_value.getFunctions.return_value = funcs_iter
+        client.program.getFunctionManager.return_value.getFunctions.return_value = (
+            funcs_iter
+        )
 
         funcs = client.list_functions()
         assert len(funcs) == 3
@@ -173,7 +175,7 @@ class TestDecompilation:
         mock_result = MagicMock()
         mock_result.decompileCompleted.return_value = True
         mock_result.getDecompiledFunction.return_value.getC.return_value = (
-            "void main(void) {\n  puts(\"hello\");\n}\n"
+            'void main(void) {\n  puts("hello");\n}\n'
         )
 
         MockDI = MagicMock()
@@ -188,13 +190,16 @@ class TestDecompilation:
         ghidra_task = MagicMock()
         ghidra_task.ConsoleTaskMonitor = MockMonitor
 
-        with patch.dict("sys.modules", {
-            "ghidra": MagicMock(),
-            "ghidra.app": MagicMock(),
-            "ghidra.app.decompiler": ghidra_decompiler,
-            "ghidra.util": MagicMock(),
-            "ghidra.util.task": ghidra_task,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "ghidra": MagicMock(),
+                "ghidra.app": MagicMock(),
+                "ghidra.app.decompiler": ghidra_decompiler,
+                "ghidra.util": MagicMock(),
+                "ghidra.util.task": ghidra_task,
+            },
+        ):
             result = client.get_decompilation(0x401000)
             assert "void main" in result
             di_instance.dispose.assert_called_once()
@@ -216,13 +221,16 @@ class TestDecompilation:
         ghidra_task = MagicMock()
         ghidra_task.ConsoleTaskMonitor = MagicMock()
 
-        with patch.dict("sys.modules", {
-            "ghidra": MagicMock(),
-            "ghidra.app": MagicMock(),
-            "ghidra.app.decompiler": ghidra_decompiler,
-            "ghidra.util": MagicMock(),
-            "ghidra.util.task": ghidra_task,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "ghidra": MagicMock(),
+                "ghidra.app": MagicMock(),
+                "ghidra.app.decompiler": ghidra_decompiler,
+                "ghidra.util": MagicMock(),
+                "ghidra.util.task": ghidra_task,
+            },
+        ):
             with pytest.raises(GhidraClientError, match="Decompilation failed"):
                 client.get_decompilation(0x401000)
 

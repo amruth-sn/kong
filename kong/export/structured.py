@@ -55,7 +55,8 @@ def _build_function_entry(result: FunctionResult) -> dict[str, str | int | list[
 
 def export_json(data: ExportData, output_path: Path) -> Path:
     includable = [
-        result for result in data.results.values()
+        result
+        for result in data.results.values()
         if not result.skipped and not result.error
     ]
     includable.sort(key=lambda r: r.address)

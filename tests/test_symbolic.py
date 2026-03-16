@@ -163,14 +163,16 @@ def _make_cff_cfg() -> tuple[ControlFlowGraph, list[PcodeOp]]:
         }
     """
     blocks = [
-        BasicBlock(start_addr=0x1000, end_addr=0x100f, instructions=["mov"]),
-        BasicBlock(start_addr=0x1010, end_addr=0x101f, instructions=["cmp", "jne"]),
-        BasicBlock(start_addr=0x1020, end_addr=0x102f, instructions=["xor"]),
-        BasicBlock(start_addr=0x1030, end_addr=0x103f, instructions=["add"]),
-        BasicBlock(start_addr=0x1040, end_addr=0x104f, instructions=["ret"]),
+        BasicBlock(start_addr=0x1000, end_addr=0x100F, instructions=["mov"]),
+        BasicBlock(start_addr=0x1010, end_addr=0x101F, instructions=["cmp", "jne"]),
+        BasicBlock(start_addr=0x1020, end_addr=0x102F, instructions=["xor"]),
+        BasicBlock(start_addr=0x1030, end_addr=0x103F, instructions=["add"]),
+        BasicBlock(start_addr=0x1040, end_addr=0x104F, instructions=["ret"]),
     ]
     edges = [
-        BlockEdge(from_addr=0x1000, to_addr=0x1010, edge_type=BlockEdgeType.FALL_THROUGH),
+        BlockEdge(
+            from_addr=0x1000, to_addr=0x1010, edge_type=BlockEdgeType.FALL_THROUGH
+        ),
         BlockEdge(from_addr=0x1010, to_addr=0x1020, edge_type=BlockEdgeType.BRANCH),
         BlockEdge(from_addr=0x1010, to_addr=0x1030, edge_type=BlockEdgeType.BRANCH),
         BlockEdge(from_addr=0x1010, to_addr=0x1040, edge_type=BlockEdgeType.BRANCH),
@@ -180,11 +182,24 @@ def _make_cff_cfg() -> tuple[ControlFlowGraph, list[PcodeOp]]:
     cfg = ControlFlowGraph(function_addr=0x1000, blocks=blocks, edges=edges)
 
     pcode_ops = [
-        PcodeOp(mnemonic="COPY", address=0x1000, inputs=["(const, 0x3a2b)"], output="state"),
-        PcodeOp(mnemonic="INT_EQUAL", address=0x1010, inputs=["state", "(const, 0x3a2b)"], output=""),
-        PcodeOp(mnemonic="COPY", address=0x1020, inputs=["(const, 0x7f01)"], output="state"),
-        PcodeOp(mnemonic="COPY", address=0x1030, inputs=["(const, 0x1c44)"], output="state"),
-        PcodeOp(mnemonic="COPY", address=0x1040, inputs=["(const, 0x9e22)"], output="state"),
+        PcodeOp(
+            mnemonic="COPY", address=0x1000, inputs=["(const, 0x3a2b)"], output="state"
+        ),
+        PcodeOp(
+            mnemonic="INT_EQUAL",
+            address=0x1010,
+            inputs=["state", "(const, 0x3a2b)"],
+            output="",
+        ),
+        PcodeOp(
+            mnemonic="COPY", address=0x1020, inputs=["(const, 0x7f01)"], output="state"
+        ),
+        PcodeOp(
+            mnemonic="COPY", address=0x1030, inputs=["(const, 0x1c44)"], output="state"
+        ),
+        PcodeOp(
+            mnemonic="COPY", address=0x1040, inputs=["(const, 0x9e22)"], output="state"
+        ),
     ]
     return cfg, pcode_ops
 
@@ -194,23 +209,23 @@ class TestStateMachineTracer:
         cfg, pcode = _make_cff_cfg()
         result = trace_state_machine_from_cfg(cfg, pcode, "state")
         assert result.error == ""
-        assert set(result.states) == {0x3a2b, 0x7f01, 0x1c44, 0x9e22}
+        assert set(result.states) == {0x3A2B, 0x7F01, 0x1C44, 0x9E22}
 
     def test_finds_transitions(self):
         cfg, pcode = _make_cff_cfg()
         result = trace_state_machine_from_cfg(cfg, pcode, "state")
         from_to = {(t.from_state, t.to_state) for t in result.transitions}
-        assert (0x3a2b, 0x7f01) not in from_to or len(result.transitions) > 0
+        assert (0x3A2B, 0x7F01) not in from_to or len(result.transitions) > 0
 
     def test_finds_exit_states(self):
         cfg, pcode = _make_cff_cfg()
         result = trace_state_machine_from_cfg(cfg, pcode, "state")
-        assert 0x9e22 in result.exit_states
+        assert 0x9E22 in result.exit_states
 
     def test_entry_state(self):
         cfg, pcode = _make_cff_cfg()
         result = trace_state_machine_from_cfg(cfg, pcode, "state")
-        assert result.entry_state == 0x3a2b
+        assert result.entry_state == 0x3A2B
 
     def test_state_variable_stored(self):
         cfg, pcode = _make_cff_cfg()

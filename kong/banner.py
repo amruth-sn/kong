@@ -33,11 +33,13 @@ def print_banner(console: Console) -> None:
     content.append("  ")
     content.append_text(version)
 
-    console.print(Panel(
-        content,
-        border_style="cyan",
-        padding=(0, 2),
-    ))
+    console.print(
+        Panel(
+            content,
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
 
 
 _ENV_VARS: dict[LLMProvider, str] = {
@@ -88,12 +90,16 @@ def check_api_key(provider: LLMProvider) -> bool:
     return bool(os.environ.get(_env_var_for(provider)))
 
 
-def print_setup_needed(console: Console, provider: LLMProvider = LLMProvider.ANTHROPIC) -> None:
+def print_setup_needed(
+    console: Console, provider: LLMProvider = LLMProvider.ANTHROPIC
+) -> None:
     env_var = _env_var_for(provider)
     console.print()
     console.print(f"[bold red]{env_var} is not set.[/bold red]")
     console.print()
-    console.print(f"Kong requires a {provider.display_name} API key to analyze binaries.")
+    console.print(
+        f"Kong requires a {provider.display_name} API key to analyze binaries."
+    )
     console.print("Run [bold cyan]kong setup[/bold cyan] for guided configuration.")
     console.print()
     console.print("Or set it directly:")
@@ -108,12 +114,14 @@ def print_analyze_header(
 ) -> None:
     print_banner(console)
     console.print()
-    console.print(Panel(
-        f"[bold]Target:[/bold]   {binary_path}\n"
-        f"[bold]Output:[/bold]   {output_dir}\n"
-        f"[bold]Formats:[/bold]  {', '.join(formats)}",
-        title="[bold white]Analysis Configuration[/bold white]",
-        border_style="dim cyan",
-        padding=(0, 2),
-    ))
+    console.print(
+        Panel(
+            f"[bold]Target:[/bold]   {binary_path}\n"
+            f"[bold]Output:[/bold]   {output_dir}\n"
+            f"[bold]Formats:[/bold]  {', '.join(formats)}",
+            title="[bold white]Analysis Configuration[/bold white]",
+            border_style="dim cyan",
+            padding=(0, 2),
+        )
+    )
     console.print()

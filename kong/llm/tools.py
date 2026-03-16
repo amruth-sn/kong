@@ -9,9 +9,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from kong.symbolic.dead_code import ResolvedPredicate, Resolution, eliminate_dead_code
+from kong.symbolic.dead_code import Resolution, ResolvedPredicate, eliminate_dead_code
 from kong.symbolic.simplifier import simplify_expression
 from kong.symbolic.state_machine import trace_state_machine
 
@@ -172,15 +172,44 @@ DEOBFUSCATION_TOOLS: list[ToolSchema] = [
 
 _CRYPTO_CONSTANTS: dict[str, list[str]] = {
     "AES S-box": ["0x63", "0x7c", "0x77", "0x7b", "0xf2", "0x6b", "0x6f", "0xc5"],
-    "AES inverse S-box": ["0x52", "0x09", "0x6a", "0xd5", "0x30", "0x36", "0xa5", "0x38"],
-    "AES round constants": ["0x01", "0x02", "0x04", "0x08", "0x10", "0x20", "0x40", "0x80", "0x1b", "0x36"],
+    "AES inverse S-box": [
+        "0x52",
+        "0x09",
+        "0x6a",
+        "0xd5",
+        "0x30",
+        "0x36",
+        "0xa5",
+        "0x38",
+    ],
+    "AES round constants": [
+        "0x01",
+        "0x02",
+        "0x04",
+        "0x08",
+        "0x10",
+        "0x20",
+        "0x40",
+        "0x80",
+        "0x1b",
+        "0x36",
+    ],
     "RC4 KSA": ["0x100"],
     "SHA-256 initial hash": [
-        "0x6a09e667", "0xbb67ae85", "0x3c6ef372", "0xa54ff53a",
-        "0x510e527f", "0x9b05688c", "0x1f83d9ab", "0x5be0cd19",
+        "0x6a09e667",
+        "0xbb67ae85",
+        "0x3c6ef372",
+        "0xa54ff53a",
+        "0x510e527f",
+        "0x9b05688c",
+        "0x1f83d9ab",
+        "0x5be0cd19",
     ],
     "SHA-256 round constants": [
-        "0x428a2f98", "0x71374491", "0xb5c0fbcf", "0xe9b5dba5",
+        "0x428a2f98",
+        "0x71374491",
+        "0xb5c0fbcf",
+        "0xe9b5dba5",
     ],
     "MD5 T-values": ["0xd76aa478", "0xe8c7b756", "0x242070db", "0xc1bdceee"],
     "CRC32 polynomial": ["0xedb88320", "0x04c11db7"],
@@ -215,11 +244,13 @@ class ToolExecutor:
             result = f"Error executing {tool_name}: {e}"
             logger.warning("Tool execution error: %s", result)
 
-        self.call_log.append(ToolCallRecord(
-            tool_name=tool_name,
-            tool_input=tool_input,
-            result=result,
-        ))
+        self.call_log.append(
+            ToolCallRecord(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                result=result,
+            )
+        )
         return result
 
     def _dispatch(self, tool_name: str, tool_input: dict[str, Any]) -> str:
@@ -241,13 +272,15 @@ class ToolExecutor:
         expr = inputs["expression"]
         bit_width = inputs.get("bit_width", 32)
         result = simplify_expression(expr, bit_width=bit_width)
-        return json.dumps({
-            "original": result.original,
-            "simplified": result.simplified,
-            "is_opaque_predicate": result.is_opaque,
-            "predicate_kind": result.predicate_kind.value,
-            "error": result.error,
-        })
+        return json.dumps(
+            {
+                "original": result.original,
+                "simplified": result.simplified,
+                "is_opaque_predicate": result.is_opaque,
+                "predicate_kind": result.predicate_kind.value,
+                "error": result.error,
+            }
+        )
 
     def _eliminate_dead_code(self, inputs: dict[str, Any]) -> str:
         code = inputs["decompiled_code"]
@@ -265,25 +298,26 @@ class ToolExecutor:
         func_addr = inputs["function_address"]
         state_var = inputs["state_variable"]
         result = trace_state_machine(self.client, func_addr, state_var)
-        return json.dumps({
-            "states": [hex(s) for s in result.states],
-            "transitions": [
-                {
-                    "from": hex(t.from_state),
-                    "to": hex(t.to_state),
-                    "condition": t.condition,
-                }
-                for t in result.transitions
-            ],
-            "entry_state": hex(result.entry_state),
-            "exit_states": [hex(s) for s in result.exit_states],
-            "state_count": result.state_count,
-            "linear_chains": [
-                [hex(s) for s in chain]
-                for chain in result.linear_chains()
-            ],
-            "error": result.error,
-        })
+        return json.dumps(
+            {
+                "states": [hex(s) for s in result.states],
+                "transitions": [
+                    {
+                        "from": hex(t.from_state),
+                        "to": hex(t.to_state),
+                        "condition": t.condition,
+                    }
+                    for t in result.transitions
+                ],
+                "entry_state": hex(result.entry_state),
+                "exit_states": [hex(s) for s in result.exit_states],
+                "state_count": result.state_count,
+                "linear_chains": [
+                    [hex(s) for s in chain] for chain in result.linear_chains()
+                ],
+                "error": result.error,
+            }
+        )
 
     def _identify_crypto_constants(self, inputs: dict[str, Any]) -> str:
         func_addr = inputs["function_address"]
@@ -297,11 +331,13 @@ class ToolExecutor:
         for algo, constants in _CRYPTO_CONSTANTS.items():
             found = [c for c in constants if c.lower() in decomp_lower]
             if len(found) >= 2 or (len(found) >= 1 and len(constants) <= 2):
-                matches.append({
-                    "algorithm": algo,
-                    "matched_constants": found,
-                    "total_constants": len(constants),
-                })
+                matches.append(
+                    {
+                        "algorithm": algo,
+                        "matched_constants": found,
+                        "total_constants": len(constants),
+                    }
+                )
         return json.dumps({"matches": matches})
 
     def _get_decompilation(self, inputs: dict[str, Any]) -> str:
@@ -317,25 +353,29 @@ class ToolExecutor:
             cfg = self.client.get_control_flow_graph(func_addr)
         except Exception as e:
             return json.dumps({"error": str(e)})
-        return json.dumps({
-            "function_address": hex(cfg.function_addr),
-            "block_count": cfg.block_count,
-            "blocks": [
-                {
-                    "start": hex(b.start_addr),
-                    "end": hex(b.end_addr),
-                    "instructions": b.instructions,
-                    "successors": [hex(s) for s in cfg.successors(b.start_addr)],
-                    "predecessors": [hex(p) for p in cfg.predecessors(b.start_addr)],
-                }
-                for b in cfg.blocks
-            ],
-            "edges": [
-                {
-                    "from": hex(e.from_addr),
-                    "to": hex(e.to_addr),
-                    "type": e.edge_type.value,
-                }
-                for e in cfg.edges
-            ],
-        })
+        return json.dumps(
+            {
+                "function_address": hex(cfg.function_addr),
+                "block_count": cfg.block_count,
+                "blocks": [
+                    {
+                        "start": hex(b.start_addr),
+                        "end": hex(b.end_addr),
+                        "instructions": b.instructions,
+                        "successors": [hex(s) for s in cfg.successors(b.start_addr)],
+                        "predecessors": [
+                            hex(p) for p in cfg.predecessors(b.start_addr)
+                        ],
+                    }
+                    for b in cfg.blocks
+                ],
+                "edges": [
+                    {
+                        "from": hex(e.from_addr),
+                        "to": hex(e.to_addr),
+                        "type": e.edge_type.value,
+                    }
+                    for e in cfg.edges
+                ],
+            }
+        )

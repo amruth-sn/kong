@@ -167,8 +167,10 @@ def _find_dispatcher(
             has_state_ref = any(
                 state_var in str(op.inputs)
                 for op in pcode_ops
-                if op.address >= block.start_addr and op.address <= block.end_addr
-                and op.mnemonic in ("INT_EQUAL", "INT_NOTEQUAL", "CBRANCH", "MULTIEQUAL")
+                if op.address >= block.start_addr
+                and op.address <= block.end_addr
+                and op.mnemonic
+                in ("INT_EQUAL", "INT_NOTEQUAL", "CBRANCH", "MULTIEQUAL")
             )
             if has_state_ref or out_count > max_out:
                 max_out = out_count
@@ -249,10 +251,12 @@ def _build_transitions(
                 key = (block_state, next_state)
                 if key not in seen:
                     seen.add(key)
-                    transitions.append(StateTransition(
-                        from_state=block_state,
-                        to_state=next_state,
-                    ))
+                    transitions.append(
+                        StateTransition(
+                            from_state=block_state,
+                            to_state=next_state,
+                        )
+                    )
 
     return transitions
 

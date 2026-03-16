@@ -16,8 +16,12 @@ def _make_client(functions=None, binary_info=None):
     """Create a mock GhidraClient."""
     client = MagicMock()
     client.get_binary_info.return_value = binary_info or BinaryInfo(
-        arch="x86-64", format="ELF", endianness="little", word_size=8,
-        compiler="GCC", name="test_binary",
+        arch="x86-64",
+        format="ELF",
+        endianness="little",
+        word_size=8,
+        compiler="GCC",
+        name="test_binary",
     )
     client.list_functions.return_value = functions or []
     client.get_strings.return_value = []
@@ -34,6 +38,7 @@ def _func(addr, name, size=100, cls=FunctionClassification.MEDIUM):
 def _batch_response_with_addresses(prompt: str, **kwargs: object) -> list[LLMResponse]:
     """Mock batch response that extracts addresses from chunk prompt headers."""
     import re
+
     addresses = re.findall(r"### (0x[0-9a-fA-F]+):", prompt)
     return [
         LLMResponse(
@@ -70,7 +75,13 @@ class TestSupervisorLifecycle:
         sup.run()
 
         phase_starts = [e.phase for e in events if e.type == EventType.PHASE_START]
-        expected = [Phase.TRIAGE, Phase.ANALYSIS, Phase.CLEANUP, Phase.SYNTHESIS, Phase.EXPORT]
+        expected = [
+            Phase.TRIAGE,
+            Phase.ANALYSIS,
+            Phase.CLEANUP,
+            Phase.SYNTHESIS,
+            Phase.EXPORT,
+        ]
         assert phase_starts == expected
 
     def test_run_with_no_functions(self, tmp_path):
@@ -92,7 +103,9 @@ class TestSupervisorTriage:
         sup.on_event(events.append)
         sup.run()
 
-        enum_events = [e for e in events if e.type == EventType.TRIAGE_FUNCTIONS_ENUMERATED]
+        enum_events = [
+            e for e in events if e.type == EventType.TRIAGE_FUNCTIONS_ENUMERATED
+        ]
         assert len(enum_events) == 1
         assert enum_events[0].data["total"] == 2
 
@@ -149,7 +162,8 @@ class TestSupervisorAnalysis:
         mock_llm = MagicMock()
         mock_llm.analyze_function_batch.side_effect = _batch_response_with_addresses
         mock_llm.analyze_function.return_value = LLMResponse(
-            name="", raw='{"globals":{},"structs":[],"name_refinements":{}}',
+            name="",
+            raw='{"globals":{},"structs":[],"name_refinements":{}}',
         )
 
         sup = Supervisor(client, config, llm_client=mock_llm)
@@ -174,7 +188,8 @@ class TestSupervisorAnalysis:
         mock_llm = MagicMock()
         mock_llm.analyze_function_batch.side_effect = RuntimeError("LLM timeout")
         mock_llm.analyze_function.return_value = LLMResponse(
-            name="", raw='{"globals":{},"structs":[],"name_refinements":{}}',
+            name="",
+            raw='{"globals":{},"structs":[],"name_refinements":{}}',
         )
 
         sup = Supervisor(client, config, llm_client=mock_llm)
@@ -192,8 +207,11 @@ class TestAnalysisStats:
     def test_record_result_renamed(self):
         stats = AnalysisStats(total_functions=10)
         result = FunctionResult(
-            address=0x1000, original_name="FUN_1000",
-            name="init_module", confidence=85, llm_calls=2,
+            address=0x1000,
+            original_name="FUN_1000",
+            name="init_module",
+            confidence=85,
+            llm_calls=2,
         )
         stats.record_result(result)
 
@@ -206,8 +224,10 @@ class TestAnalysisStats:
     def test_record_result_skipped(self):
         stats = AnalysisStats(total_functions=10)
         result = FunctionResult(
-            address=0x1000, original_name="FUN_1000",
-            skipped=True, skip_reason="trivial",
+            address=0x1000,
+            original_name="FUN_1000",
+            skipped=True,
+            skip_reason="trivial",
         )
         stats.record_result(result)
 
@@ -217,7 +237,8 @@ class TestAnalysisStats:
     def test_record_result_error(self):
         stats = AnalysisStats(total_functions=10)
         result = FunctionResult(
-            address=0x1000, original_name="FUN_1000",
+            address=0x1000,
+            original_name="FUN_1000",
             error="timeout",
         )
         stats.record_result(result)
@@ -228,8 +249,11 @@ class TestAnalysisStats:
     def test_record_result_unchanged_name_is_confirmed(self):
         stats = AnalysisStats(total_functions=10)
         result = FunctionResult(
-            address=0x1000, original_name="FUN_1000",
-            name="FUN_1000", confidence=30, llm_calls=1,
+            address=0x1000,
+            original_name="FUN_1000",
+            name="FUN_1000",
+            confidence=30,
+            llm_calls=1,
         )
         stats.record_result(result)
 
@@ -242,9 +266,21 @@ class TestAnalysisStats:
     def test_confidence_buckets(self):
         stats = AnalysisStats(total_functions=10)
 
-        stats.record_result(FunctionResult(address=1, original_name="a", name="x", confidence=90, llm_calls=1))
-        stats.record_result(FunctionResult(address=2, original_name="b", name="y", confidence=60, llm_calls=1))
-        stats.record_result(FunctionResult(address=3, original_name="c", name="z", confidence=30, llm_calls=1))
+        stats.record_result(
+            FunctionResult(
+                address=1, original_name="a", name="x", confidence=90, llm_calls=1
+            )
+        )
+        stats.record_result(
+            FunctionResult(
+                address=2, original_name="b", name="y", confidence=60, llm_calls=1
+            )
+        )
+        stats.record_result(
+            FunctionResult(
+                address=3, original_name="c", name="z", confidence=30, llm_calls=1
+            )
+        )
 
         assert stats.high_confidence == 1
         assert stats.medium_confidence == 1
@@ -256,15 +292,18 @@ class TestAnalysisStats:
         stats.confirmed = 1
         assert stats.name_rate == 0.75
 
+
 class TestSupervisorExport:
     def test_export_creates_source_file(self, tmp_path):
         funcs = [_func(0x1000, "a")]
         client = _make_client(functions=funcs)
         client.get_decompilation.return_value = "void a(void) { return; }"
-        config = KongConfig(output=OutputConfig(
-            directory=tmp_path / "out",
-            formats=["source"],
-        ))
+        config = KongConfig(
+            output=OutputConfig(
+                directory=tmp_path / "out",
+                formats=["source"],
+            )
+        )
         sup = Supervisor(client, config)
         sup.run()
 
@@ -274,10 +313,12 @@ class TestSupervisorExport:
         funcs = [_func(0x1000, "a")]
         client = _make_client(functions=funcs)
         client.get_decompilation.return_value = "void a(void) { return; }"
-        config = KongConfig(output=OutputConfig(
-            directory=tmp_path / "out",
-            formats=["json"],
-        ))
+        config = KongConfig(
+            output=OutputConfig(
+                directory=tmp_path / "out",
+                formats=["json"],
+            )
+        )
         sup = Supervisor(client, config)
         sup.run()
 
@@ -287,10 +328,12 @@ class TestSupervisorExport:
         funcs = [_func(0x1000, "a")]
         client = _make_client(functions=funcs)
         client.get_decompilation.return_value = "void a(void) { return; }"
-        config = KongConfig(output=OutputConfig(
-            directory=tmp_path / "out",
-            formats=["source", "json"],
-        ))
+        config = KongConfig(
+            output=OutputConfig(
+                directory=tmp_path / "out",
+                formats=["source", "json"],
+            )
+        )
         sup = Supervisor(client, config)
 
         events = []
@@ -304,10 +347,12 @@ class TestSupervisorExport:
 
     def test_export_skips_ghidra_format(self, tmp_path):
         client = _make_client()
-        config = KongConfig(output=OutputConfig(
-            directory=tmp_path / "out",
-            formats=["ghidra"],
-        ))
+        config = KongConfig(
+            output=OutputConfig(
+                directory=tmp_path / "out",
+                formats=["ghidra"],
+            )
+        )
         sup = Supervisor(client, config)
         sup.run()
 
@@ -321,7 +366,9 @@ class TestSupervisorSynthesis:
 
         mock_llm = MagicMock()
         mock_llm.analyze_function.return_value = LLMResponse(
-            name="init", confidence=80, raw='{"globals":{},"structs":[],"name_refinements":{}}',
+            name="init",
+            confidence=80,
+            raw='{"globals":{},"structs":[],"name_refinements":{}}',
         )
         mock_llm.analyze_function_batch.side_effect = _batch_response_with_addresses
 
@@ -334,7 +381,9 @@ class TestSupervisorSynthesis:
         phase_starts = [e.phase for e in events if e.type == EventType.PHASE_START]
         assert Phase.SYNTHESIS in phase_starts
 
-        phase_completes = [e.phase for e in events if e.type == EventType.PHASE_COMPLETE]
+        phase_completes = [
+            e.phase for e in events if e.type == EventType.PHASE_COMPLETE
+        ]
         assert Phase.SYNTHESIS in phase_completes
 
     def test_synthesis_skipped_without_llm_client(self, tmp_path):
@@ -348,7 +397,8 @@ class TestSupervisorSynthesis:
         sup.run()
 
         synthesis_completes = [
-            e for e in events
+            e
+            for e in events
             if e.type == EventType.PHASE_COMPLETE and e.phase == Phase.SYNTHESIS
         ]
         assert len(synthesis_completes) == 1
@@ -366,7 +416,8 @@ class TestSupervisorSynthesis:
         sup.run()
 
         synthesis_completes = [
-            e for e in events
+            e
+            for e in events
             if e.type == EventType.PHASE_COMPLETE and e.phase == Phase.SYNTHESIS
         ]
         assert len(synthesis_completes) == 1
@@ -403,8 +454,11 @@ class TestCleanup:
         sup = Supervisor(client, config)
         sup.binary_info = client.get_binary_info()
         sup.results[0x1000] = FunctionResult(
-            address=0x1000, original_name="FUN_1000",
-            name="init", confidence=80, signature="void init(void)",
+            address=0x1000,
+            original_name="FUN_1000",
+            name="init",
+            confidence=80,
+            signature="void init(void)",
             signature_applied=False,
         )
 
@@ -427,7 +481,8 @@ class TestChunkedPipelineIntegration:
         mock_llm = MagicMock()
         mock_llm.analyze_function_batch.side_effect = _batch_response_with_addresses
         mock_llm.analyze_function.return_value = LLMResponse(
-            name="", raw='{"globals":{},"structs":[],"name_refinements":{}}',
+            name="",
+            raw='{"globals":{},"structs":[],"name_refinements":{}}',
         )
 
         sup = Supervisor(client, config, llm_client=mock_llm)
@@ -446,7 +501,8 @@ class TestChunkedPipelineIntegration:
         mock_llm = MagicMock()
         mock_llm.analyze_function_batch.side_effect = _batch_response_with_addresses
         mock_llm.analyze_function.return_value = LLMResponse(
-            name="", raw='{"globals":{},"structs":[],"name_refinements":{}}',
+            name="",
+            raw='{"globals":{},"structs":[],"name_refinements":{}}',
         )
 
         sup = Supervisor(client, config, llm_client=mock_llm)
@@ -467,7 +523,8 @@ class TestChunkedPipelineIntegration:
         mock_llm = MagicMock()
         mock_llm.analyze_function_batch.side_effect = _batch_response_with_addresses
         mock_llm.analyze_function.return_value = LLMResponse(
-            name="", raw='{"globals":{},"structs":[],"name_refinements":{}}',
+            name="",
+            raw='{"globals":{},"structs":[],"name_refinements":{}}',
         )
 
         sup = Supervisor(client, config, llm_client=mock_llm)

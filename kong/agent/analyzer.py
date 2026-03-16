@@ -14,12 +14,12 @@ from typing import TYPE_CHECKING, Protocol
 
 import json_repair
 
+from kong.agent.deobfuscator import classify_obfuscation
 from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry, StructDefinition
 from kong.normalizer.syntactic import normalize
-from kong.agent.deobfuscator import classify_obfuscation
 
 if TYPE_CHECKING:
     from kong.agent.deobfuscator import Deobfuscator
@@ -67,7 +67,9 @@ class LLMClient(Protocol):
     @property
     def total_cost_usd(self) -> float: ...
 
-    def analyze_function(self, prompt: str, *, model: str | None = None) -> LLMResponse: ...
+    def analyze_function(
+        self, prompt: str, *, model: str | None = None
+    ) -> LLMResponse: ...
 
     def analyze_with_tools(
         self,
@@ -78,12 +80,15 @@ class LLMClient(Protocol):
         max_rounds: int = 10,
     ) -> LLMResponse: ...
 
-    def analyze_function_batch(self, prompt: str, *, model: str | None = None) -> list[LLMResponse]: ...
+    def analyze_function_batch(
+        self, prompt: str, *, model: str | None = None
+    ) -> list[LLMResponse]: ...
 
 
 @dataclass
 class LLMResponse:
     """Structured response from the LLM for a single function analysis."""
+
     name: str
     signature: str = ""
     confidence: int = 0
@@ -115,6 +120,7 @@ class StructFieldProposal:
 @dataclass
 class StructProposal:
     """A struct layout proposed by the LLM based on offset-based memory accesses."""
+
     name: str
     total_size: int
     fields: list[StructFieldProposal] = field(default_factory=list)
@@ -125,6 +131,7 @@ class StructProposal:
 @dataclass
 class FunctionSnippet:
     """Decompilation snippet for a caller or callee function."""
+
     address: int
     name: str
     snippet: str
@@ -133,6 +140,7 @@ class FunctionSnippet:
 @dataclass
 class AnalysisContext:
     """All context assembled for analyzing a single function."""
+
     function: FunctionInfo
     decompilation: str
     binary_info: BinaryInfo
@@ -174,9 +182,13 @@ class Analyzer:
         """Full analysis pipeline for one function."""
 
         func = item.function
-        context = self._build_context(item, binary_info, known_results, strings, known_types)
+        context = self._build_context(
+            item, binary_info, known_results, strings, known_types
+        )
 
-        techniques = classify_obfuscation(context.decompilation) if self._deobfuscator else []
+        techniques = (
+            classify_obfuscation(context.decompilation) if self._deobfuscator else []
+        )
 
         if techniques and self._deobfuscator:
             response, tool_calls = self._deobfuscator.deobfuscate(context, techniques)
@@ -256,7 +268,9 @@ class Analyzer:
             except Exception:
                 snippet = ""
             if snippet:
-                snippets.append(FunctionSnippet(address=addr, name=name, snippet=snippet))
+                snippets.append(
+                    FunctionSnippet(address=addr, name=name, snippet=snippet)
+                )
         return snippets
 
     def _resolve_name(self, addr: int, known_results: dict[int, FunctionResult]) -> str:
@@ -292,8 +306,10 @@ class Analyzer:
         )
         parts.append("")
 
-        parts.append(f"## Target Function: {context.function.name} "
-                     f"(0x{context.function.address:08x})")
+        parts.append(
+            f"## Target Function: {context.function.name} "
+            f"(0x{context.function.address:08x})"
+        )
         parts.append(f"Size: {context.function.size} bytes")
         parts.append("")
         parts.append("### Decompilation")
@@ -341,7 +357,9 @@ class Analyzer:
             for sd in context.known_types:
                 parts.append(f"\n```c\nstruct {sd.name} {{ // {sd.size} bytes")
                 for f in sd.fields:
-                    parts.append(f"    {f.data_type} {f.name}; // offset 0x{f.offset:x}, {f.size} bytes")
+                    parts.append(
+                        f"    {f.data_type} {f.name}; // offset 0x{f.offset:x}, {f.size} bytes"
+                    )
                 parts.append("};")
                 parts.append("```")
 
@@ -406,14 +424,18 @@ class Analyzer:
             try:
                 self.client.rename_function(addr, response.name)
             except Exception as e:
-                logger.warning("Failed to rename 0x%08x to %s: %s", addr, response.name, e)
+                logger.warning(
+                    "Failed to rename 0x%08x to %s: %s", addr, response.name, e
+                )
 
         signature_ok = True
         if response.signature:
             try:
                 self.client.set_function_signature(addr, response.signature)
             except Exception as e:
-                logger.debug("Signature deferred for 0x%08x (will retry in cleanup): %s", addr, e)
+                logger.debug(
+                    "Signature deferred for 0x%08x (will retry in cleanup): %s", addr, e
+                )
                 signature_ok = False
 
         if response.comments:
@@ -443,12 +465,14 @@ class Analyzer:
                 )
                 for i, f in enumerate(sp.get("fields", []))
             ]
-            proposals.append(StructProposal(
-                name=sp["name"],
-                total_size=total_size,
-                fields=fields,
-                used_by_param=sp.get("used_by_param", ""),
-            ))
+            proposals.append(
+                StructProposal(
+                    name=sp["name"],
+                    total_size=total_size,
+                    fields=fields,
+                    used_by_param=sp.get("used_by_param", ""),
+                )
+            )
         return proposals
 
     @staticmethod

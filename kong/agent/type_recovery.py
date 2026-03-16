@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ParamTypeApplication:
     """Records that a specific function parameter should receive a struct type."""
+
     func_addr: int
     param_name: str
     struct_name: str
@@ -30,6 +31,7 @@ class ParamTypeApplication:
 @dataclass
 class UnifiedStruct:
     """A struct definition produced by merging multiple proposals."""
+
     definition: StructDefinition
     source_proposals: list[StructProposal] = field(default_factory=list)
     applications: list[ParamTypeApplication] = field(default_factory=list)
@@ -97,11 +99,13 @@ class StructAccumulator:
             for f in p.fields:
                 fields_by_offset[f.offset].append(f)
             if p.used_by_param and p.source_function:
-                applications.append(ParamTypeApplication(
-                    func_addr=p.source_function,
-                    param_name=p.used_by_param,
-                    struct_name="",
-                ))
+                applications.append(
+                    ParamTypeApplication(
+                        func_addr=p.source_function,
+                        param_name=p.used_by_param,
+                        struct_name="",
+                    )
+                )
 
         winning_name = max(name_counts, key=name_counts.get)  # type: ignore[arg-type]
 
@@ -109,14 +113,18 @@ class StructAccumulator:
         for offset in sorted(fields_by_offset):
             candidates = fields_by_offset[offset]
             best = _pick_best_field(candidates)
-            merged_fields.append(StructField(
-                name=best.name,
-                data_type=best.data_type,
-                offset=best.offset,
-                size=best.size,
-            ))
+            merged_fields.append(
+                StructField(
+                    name=best.name,
+                    data_type=best.data_type,
+                    offset=best.offset,
+                    size=best.size,
+                )
+            )
 
-        max_size = max((p.total_size for p in group if p.total_size is not None), default=0)
+        max_size = max(
+            (p.total_size for p in group if p.total_size is not None), default=0
+        )
         last_field_end = max(
             (f.offset + f.size for f in merged_fields),
             default=0,
@@ -145,9 +153,12 @@ def _pick_best_field(candidates: list[StructFieldProposal]) -> StructFieldPropos
     name) and whose type is most specific (not 'undefined' or 'int' when a
     more specific type is available).
     """
+
     def _score(f: StructFieldProposal) -> tuple[int, int]:
         generic_names = {"field", "unk", "undefined", "pad"}
-        name_score = 0 if any(g in f.name.lower() for g in generic_names) else len(f.name)
+        name_score = (
+            0 if any(g in f.name.lower() for g in generic_names) else len(f.name)
+        )
         generic_types = {"undefined", "undefined4", "undefined8"}
         type_score = 0 if f.data_type.lower() in generic_types else 1
         return (type_score, name_score)
@@ -171,14 +182,17 @@ def apply_unified_structs(
             client.create_struct(us.definition)
         except Exception:
             logger.warning(
-                "Failed to create struct '%s' in Ghidra", us.definition.name,
+                "Failed to create struct '%s' in Ghidra",
+                us.definition.name,
                 exc_info=True,
             )
             continue
 
         for app in us.applications:
             try:
-                param_ordinal = _resolve_param_ordinal(client, app.func_addr, app.param_name)
+                param_ordinal = _resolve_param_ordinal(
+                    client, app.func_addr, app.param_name
+                )
                 if param_ordinal is not None:
                     client.apply_type_to_param(
                         app.func_addr,
@@ -190,7 +204,9 @@ def apply_unified_structs(
             except Exception:
                 logger.warning(
                     "Failed to apply struct '%s' to param '%s' of 0x%08x",
-                    app.struct_name, app.param_name, app.func_addr,
+                    app.struct_name,
+                    app.param_name,
+                    app.func_addr,
                     exc_info=True,
                 )
 

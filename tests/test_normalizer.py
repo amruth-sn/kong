@@ -119,7 +119,9 @@ class TestUndefinedTypeInference:
 
 class TestDeadNullAssignmentRemoval:
     def test_simple_dead_null_assignment(self) -> None:
-        code = "if (local_18 == (undefined4 *)0x0) {\n    local_18 = (undefined4 *)0x0;\n}"
+        code = (
+            "if (local_18 == (undefined4 *)0x0) {\n    local_18 = (undefined4 *)0x0;\n}"
+        )
         result = normalize(code)
         assert "local_18 = (undefined4 *)0x0;" not in result
         assert "if (local_18 == (undefined4 *)0x0) {" in result
@@ -135,7 +137,7 @@ class TestDeadNullAssignmentRemoval:
         assert "ptr = malloc(10);" in result
 
     def test_dead_null_with_other_statements(self) -> None:
-        code = "if (var == (int *)0x0) {\n    var = (int *)0x0;\n    printf(\"null\");\n}"
+        code = 'if (var == (int *)0x0) {\n    var = (int *)0x0;\n    printf("null");\n}'
         result = normalize(code)
         assert "var = (int *)0x0;" not in result
         assert 'printf("null");' in result
@@ -158,9 +160,7 @@ class TestPipelineOrdering:
 
     def test_create_node_dead_assignment(self) -> None:
         code = (
-            "if (local_18 == (undefined4 *)0x0) {\n"
-            "    local_18 = (undefined4 *)0x0;\n"
-            "}"
+            "if (local_18 == (undefined4 *)0x0) {\n    local_18 = (undefined4 *)0x0;\n}"
         )
         result = normalize(code)
         assert "local_18 = (undefined4 *)0x0;" not in result

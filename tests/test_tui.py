@@ -18,11 +18,12 @@ class TestBinaryHeader:
         assert widget._content == expected
 
 
-
 class TestStatusBar:
     def test_update_status_formats_correctly(self) -> None:
         widget = StatusBar()
-        text = widget.build_status_text(elapsed=125.0, llm_calls=10, cost=0.0523, paused=False)
+        text = widget.build_status_text(
+            elapsed=125.0, llm_calls=10, cost=0.0523, paused=False
+        )
         content = text.plain
         assert "LLM: 10" in content
         assert "$0.0523" in content
@@ -31,8 +32,8 @@ class TestStatusBar:
 
     def test_update_status_paused(self) -> None:
         widget = StatusBar()
-        text = widget.build_status_text(elapsed=60.0, llm_calls=5, cost=0.01, paused=True)
+        text = widget.build_status_text(
+            elapsed=60.0, llm_calls=5, cost=0.01, paused=True
+        )
         content = text.plain
         assert "PAUSED" in content
-
-

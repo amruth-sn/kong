@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 @dataclass
 class AnalysisStats:
     """Aggregate statistics for the full run."""
+
     total_functions: int = 0
     analyzed: int = 0
     renamed: int = 0
@@ -67,6 +68,7 @@ class AnalysisStats:
 @dataclass
 class FunctionResult:
     """Result of analyzing a single function."""
+
     address: int
     original_name: str
     name: str = ""

@@ -10,15 +10,19 @@ from kong.agent.analyzer import (
     StructFieldProposal,
     StructProposal,
 )
+from kong.agent.events import EventType
 from kong.agent.models import FunctionResult
+from kong.agent.queue import WorkItem
+from kong.agent.supervisor import Supervisor
 from kong.agent.type_recovery import (
     ParamTypeApplication,
     StructAccumulator,
     UnifiedStruct,
-    apply_unified_structs,
     _pick_best_field,
     _resolve_param_ordinal,
+    apply_unified_structs,
 )
+from kong.config import KongConfig, OutputConfig
 from kong.ghidra.types import (
     BinaryInfo,
     FunctionClassification,
@@ -27,10 +31,6 @@ from kong.ghidra.types import (
     StructDefinition,
     StructField,
 )
-from kong.agent.events import EventType
-from kong.agent.supervisor import Supervisor
-from kong.config import KongConfig, OutputConfig
-from kong.agent.queue import WorkItem
 
 
 def _field(name: str, dtype: str, offset: int, size: int) -> StructFieldProposal:
@@ -56,9 +56,12 @@ def _proposal(
 class TestStructAccumulator:
     def test_add_proposals(self):
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal("conn_t", 32, [_field("fd", "int", 0, 4)]),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal("conn_t", 32, [_field("fd", "int", 0, 4)]),
+            ],
+        )
         assert acc.proposal_count == 1
 
     def test_tags_source_function(self):
@@ -69,12 +72,19 @@ class TestStructAccumulator:
 
     def test_single_proposal_unifies_to_one(self):
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal("config_t", 24, [
-                _field("flags", "int", 0, 4),
-                _field("timeout", "int", 4, 4),
-            ]),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal(
+                    "config_t",
+                    24,
+                    [
+                        _field("flags", "int", 0, 4),
+                        _field("timeout", "int", 4, 4),
+                    ],
+                ),
+            ],
+        )
         unified = acc.unify()
         assert len(unified) == 1
         assert unified[0].definition.name == "config_t"
@@ -83,18 +93,32 @@ class TestStructAccumulator:
 
     def test_same_name_merges_fields(self):
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal("conn_t", 32, [
-                _field("fd", "int", 0, 4),
-                _field("flags", "int", 4, 4),
-            ]),
-        ])
-        acc.add_proposals(0x2000, [
-            _proposal("conn_t", 32, [
-                _field("socket_fd", "int", 0, 4),
-                _field("port", "uint16_t", 8, 2),
-            ]),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal(
+                    "conn_t",
+                    32,
+                    [
+                        _field("fd", "int", 0, 4),
+                        _field("flags", "int", 4, 4),
+                    ],
+                ),
+            ],
+        )
+        acc.add_proposals(
+            0x2000,
+            [
+                _proposal(
+                    "conn_t",
+                    32,
+                    [
+                        _field("socket_fd", "int", 0, 4),
+                        _field("port", "uint16_t", 8, 2),
+                    ],
+                ),
+            ],
+        )
         unified = acc.unify()
         assert len(unified) == 1
         assert unified[0].definition.size == 32
@@ -103,22 +127,36 @@ class TestStructAccumulator:
     def test_same_name_different_sizes_merge_to_max(self):
         """The cJSON scenario: same struct seen partially by different functions."""
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal("cJSON", 24, [
-                _field("type", "int", 0, 4),
-                _field("valueint", "int", 8, 4),
-            ]),
-        ])
-        acc.add_proposals(0x2000, [
-            _proposal("cJSON", 64, [
-                _field("type", "int", 0, 4),
-                _field("valueint", "int", 8, 4),
-                _field("valuedouble", "double", 16, 8),
-                _field("string", "char *", 24, 8),
-                _field("child", "void *", 40, 8),
-                _field("next", "void *", 48, 8),
-            ]),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal(
+                    "cJSON",
+                    24,
+                    [
+                        _field("type", "int", 0, 4),
+                        _field("valueint", "int", 8, 4),
+                    ],
+                ),
+            ],
+        )
+        acc.add_proposals(
+            0x2000,
+            [
+                _proposal(
+                    "cJSON",
+                    64,
+                    [
+                        _field("type", "int", 0, 4),
+                        _field("valueint", "int", 8, 4),
+                        _field("valuedouble", "double", 16, 8),
+                        _field("string", "char *", 24, 8),
+                        _field("child", "void *", 40, 8),
+                        _field("next", "void *", 48, 8),
+                    ],
+                ),
+            ],
+        )
         unified = acc.unify()
         assert len(unified) == 1
         assert unified[0].definition.name == "cJSON"
@@ -127,37 +165,55 @@ class TestStructAccumulator:
 
     def test_different_names_stay_separate(self):
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal("type_a", 16, [_field("x", "int", 0, 4)]),
-        ])
-        acc.add_proposals(0x2000, [
-            _proposal("type_b", 16, [_field("y", "int", 8, 4)]),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal("type_a", 16, [_field("x", "int", 0, 4)]),
+            ],
+        )
+        acc.add_proposals(
+            0x2000,
+            [
+                _proposal("type_b", 16, [_field("y", "int", 8, 4)]),
+            ],
+        )
         unified = acc.unify()
         assert len(unified) == 2
 
     def test_name_used_directly(self):
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal("config_t", 16, [_field("a", "int", 0, 4)]),
-        ])
-        acc.add_proposals(0x2000, [
-            _proposal("config_t", 32, [_field("a", "int", 0, 4), _field("b", "int", 8, 4)]),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal("config_t", 16, [_field("a", "int", 0, 4)]),
+            ],
+        )
+        acc.add_proposals(
+            0x2000,
+            [
+                _proposal(
+                    "config_t", 32, [_field("a", "int", 0, 4), _field("b", "int", 8, 4)]
+                ),
+            ],
+        )
         unified = acc.unify()
         assert len(unified) == 1
         assert unified[0].definition.name == "config_t"
 
     def test_applications_tracked(self):
         acc = StructAccumulator()
-        acc.add_proposals(0x1000, [
-            _proposal(
-                "conn_t", 32,
-                [_field("fd", "int", 0, 4)],
-                used_by_param="param_1",
-                source_function=0x1000,
-            ),
-        ])
+        acc.add_proposals(
+            0x1000,
+            [
+                _proposal(
+                    "conn_t",
+                    32,
+                    [_field("fd", "int", 0, 4)],
+                    used_by_param="param_1",
+                    source_function=0x1000,
+                ),
+            ],
+        )
         unified = acc.unify()
         assert len(unified[0].applications) == 1
         app = unified[0].applications[0]
@@ -183,11 +239,14 @@ class TestPickBestField:
         best = _pick_best_field(candidates)
         assert best.data_type == "int"
 
+
 class TestApplyUnifiedStructs:
     def test_creates_structs_and_applies_types(self):
         client = MagicMock()
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="process", size=100,
+            address=0x1000,
+            name="process",
+            size=100,
             params=[ParameterInfo(name="param_1", data_type="undefined *", ordinal=0)],
         )
 
@@ -198,7 +257,9 @@ class TestApplyUnifiedStructs:
                 fields=[StructField(name="fd", data_type="int", offset=0, size=4)],
             ),
             applications=[
-                ParamTypeApplication(func_addr=0x1000, param_name="param_1", struct_name="conn_t"),
+                ParamTypeApplication(
+                    func_addr=0x1000, param_name="param_1", struct_name="conn_t"
+                ),
             ],
         )
 
@@ -206,7 +267,10 @@ class TestApplyUnifiedStructs:
 
         client.create_struct.assert_called_once_with(us.definition)
         client.apply_type_to_param.assert_called_once_with(
-            0x1000, 0, "conn_t", as_pointer=True,
+            0x1000,
+            0,
+            "conn_t",
+            as_pointer=True,
         )
         assert 0x1000 in affected
 
@@ -217,7 +281,9 @@ class TestApplyUnifiedStructs:
         us = UnifiedStruct(
             definition=StructDefinition(name="bad_t", size=8, fields=[]),
             applications=[
-                ParamTypeApplication(func_addr=0x1000, param_name="param_1", struct_name="bad_t"),
+                ParamTypeApplication(
+                    func_addr=0x1000, param_name="param_1", struct_name="bad_t"
+                ),
             ],
         )
 
@@ -228,7 +294,9 @@ class TestApplyUnifiedStructs:
     def test_handles_apply_failure(self):
         client = MagicMock()
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="f", size=100,
+            address=0x1000,
+            name="f",
+            size=100,
             params=[ParameterInfo(name="param_1", data_type="void *", ordinal=0)],
         )
         client.apply_type_to_param.side_effect = Exception("Apply failed")
@@ -236,18 +304,23 @@ class TestApplyUnifiedStructs:
         us = UnifiedStruct(
             definition=StructDefinition(name="t", size=8, fields=[]),
             applications=[
-                ParamTypeApplication(func_addr=0x1000, param_name="param_1", struct_name="t"),
+                ParamTypeApplication(
+                    func_addr=0x1000, param_name="param_1", struct_name="t"
+                ),
             ],
         )
 
         affected = apply_unified_structs(client, [us])
         assert affected == []
 
+
 class TestResolveParamOrdinal:
     def test_resolves_by_name(self):
         client = MagicMock()
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="f", size=100,
+            address=0x1000,
+            name="f",
+            size=100,
             params=[
                 ParameterInfo(name="param_1", data_type="int", ordinal=0),
                 ParameterInfo(name="param_2", data_type="char *", ordinal=1),
@@ -258,7 +331,9 @@ class TestResolveParamOrdinal:
     def test_returns_none_for_unknown_param(self):
         client = MagicMock()
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="f", size=100,
+            address=0x1000,
+            name="f",
+            size=100,
             params=[ParameterInfo(name="param_1", data_type="int", ordinal=0)],
         )
         assert _resolve_param_ordinal(client, 0x1000, "param_99") is None
@@ -271,7 +346,7 @@ class TestResolveParamOrdinal:
 
 class TestParseLLMJsonStructs:
     def test_parse_with_struct_proposals(self):
-        raw = '''{
+        raw = """{
             "name": "process_request",
             "confidence": 75,
             "struct_proposals": [
@@ -285,7 +360,7 @@ class TestParseLLMJsonStructs:
                     "used_by_param": "param_1"
                 }
             ]
-        }'''
+        }"""
         resp = Analyzer.parse_llm_json(raw)
         assert len(resp.struct_proposals) == 1
         sp = resp.struct_proposals[0]
@@ -307,14 +382,14 @@ class TestParseLLMJsonStructs:
         assert resp.struct_proposals == []
 
     def test_parse_struct_fields_with_defaults(self):
-        raw = '''{
+        raw = """{
             "name": "f",
             "struct_proposals": [{
                 "name": "s",
                 "total_size": 8,
                 "fields": [{"offset": 0}]
             }]
-        }'''
+        }"""
         resp = Analyzer.parse_llm_json(raw)
         assert len(resp.struct_proposals) == 1
         f = resp.struct_proposals[0].fields[0]
@@ -330,21 +405,29 @@ class TestAnalyzerContextTypes:
         client = MagicMock()
         client.get_decompilation.return_value = "void f(void *p) { return; }"
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="FUN_00001000", size=100,
+            address=0x1000,
+            name="FUN_00001000",
+            size=100,
             classification=FunctionClassification.MEDIUM,
         )
         client.get_xrefs_from.return_value = []
 
         item = WorkItem(
             function=FunctionInfo(
-                address=0x1000, name="FUN_00001000", size=100,
+                address=0x1000,
+                name="FUN_00001000",
+                size=100,
                 classification=FunctionClassification.MEDIUM,
             ),
-            callers=[], callees=[],
+            callers=[],
+            callees=[],
         )
         binary_info = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC",
+            arch="x86-64",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="GCC",
         )
         known_types = [
             StructDefinition(
@@ -372,21 +455,29 @@ class TestAnalyzerContextTypes:
         client = MagicMock()
         client.get_decompilation.return_value = "void f() {}"
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="f", size=100,
+            address=0x1000,
+            name="f",
+            size=100,
             classification=FunctionClassification.MEDIUM,
         )
         client.get_xrefs_from.return_value = []
 
         item = WorkItem(
             function=FunctionInfo(
-                address=0x1000, name="f", size=100,
+                address=0x1000,
+                name="f",
+                size=100,
                 classification=FunctionClassification.MEDIUM,
             ),
-            callers=[], callees=[],
+            callers=[],
+            callees=[],
         )
         binary_info = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC",
+            arch="x86-64",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="GCC",
         )
 
         analyzer = Analyzer(client, llm)
@@ -415,21 +506,29 @@ class TestAnalyzerStructProposalPassthrough:
         client = MagicMock()
         client.get_decompilation.return_value = "void f() {}"
         client.get_function_info.return_value = FunctionInfo(
-            address=0x1000, name="f", size=100,
+            address=0x1000,
+            name="f",
+            size=100,
             classification=FunctionClassification.MEDIUM,
         )
         client.get_xrefs_from.return_value = []
 
         item = WorkItem(
             function=FunctionInfo(
-                address=0x1000, name="f", size=100,
+                address=0x1000,
+                name="f",
+                size=100,
                 classification=FunctionClassification.MEDIUM,
             ),
-            callers=[], callees=[],
+            callers=[],
+            callees=[],
         )
         binary_info = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC",
+            arch="x86-64",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="GCC",
         )
 
         analyzer = Analyzer(client, llm)
@@ -443,14 +542,20 @@ class TestSupervisorCleanupIntegration:
     def test_cleanup_with_struct_proposals(self, tmp_path):
         funcs = [
             FunctionInfo(
-                address=0x1000, name="process", size=100,
+                address=0x1000,
+                name="process",
+                size=100,
                 classification=FunctionClassification.MEDIUM,
             ),
         ]
         client = MagicMock()
         client.get_binary_info.return_value = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC", name="test",
+            arch="x86-64",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="GCC",
+            name="test",
         )
         client.list_functions.return_value = funcs
         client.get_strings.return_value = []
@@ -494,14 +599,20 @@ class TestSupervisorCleanupIntegration:
     def test_cleanup_without_struct_proposals(self, tmp_path):
         funcs = [
             FunctionInfo(
-                address=0x1000, name="f", size=100,
+                address=0x1000,
+                name="f",
+                size=100,
                 classification=FunctionClassification.MEDIUM,
             ),
         ]
         client = MagicMock()
         client.get_binary_info.return_value = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC", name="test",
+            arch="x86-64",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="GCC",
+            name="test",
         )
         client.list_functions.return_value = funcs
         client.get_strings.return_value = []
@@ -528,24 +639,32 @@ class TestSupervisorCleanupIntegration:
 
     def test_cleanup_retries_failed_signatures(self, tmp_path):
         """Signatures that fail during Phase 2 (type not yet created) get
-        retried after struct creation in cleanup."""        
+        retried after struct creation in cleanup."""
 
         funcs = [
             FunctionInfo(
-                address=0x1000, name="cJSON_IsTrue", size=100,
+                address=0x1000,
+                name="cJSON_IsTrue",
+                size=100,
                 classification=FunctionClassification.MEDIUM,
             ),
         ]
         client = MagicMock()
         client.get_binary_info.return_value = BinaryInfo(
-            arch="x86-64", format="ELF", endianness="little",
-            word_size=8, compiler="GCC", name="cjson_test",
+            arch="x86-64",
+            format="ELF",
+            endianness="little",
+            word_size=8,
+            compiler="GCC",
+            name="cjson_test",
         )
         client.list_functions.return_value = funcs
         client.get_strings.return_value = []
         client.get_callers.return_value = []
         client.get_callees.return_value = []
-        client.get_decompilation.return_value = "int f(void *p) { return *(int *)(p + 4); }"
+        client.get_decompilation.return_value = (
+            "int f(void *p) { return *(int *)(p + 4); }"
+        )
         client.get_function_info.return_value = funcs[0]
         client.get_xrefs_from.return_value = []
         client.list_custom_types.return_value = []

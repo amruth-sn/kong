@@ -27,8 +27,7 @@ def _connect() -> sqlite3.Connection:
     db_path = get_config_db()
     conn = sqlite3.connect(str(db_path))
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS config "
-        "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
     )
     conn.commit()
     return conn
@@ -37,9 +36,7 @@ def _connect() -> sqlite3.Connection:
 def read_config(key: str) -> str | None:
     conn = _connect()
     try:
-        row = conn.execute(
-            "SELECT value FROM config WHERE key = ?", (key,)
-        ).fetchone()
+        row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
         return row[0] if row else None
     finally:
         conn.close()
@@ -99,8 +96,10 @@ def save_setup(
     enabled: list[LLMProvider],
     default: LLMProvider,
 ) -> None:
-    write_configs({
-        "enabled_providers": json.dumps([p.value for p in enabled]),
-        "default_provider": default.value,
-        "setup_complete": "true",
-    })
+    write_configs(
+        {
+            "enabled_providers": json.dumps([p.value for p in enabled]),
+            "default_provider": default.value,
+            "setup_complete": "true",
+        }
+    )

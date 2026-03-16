@@ -34,6 +34,7 @@ class SignatureEntry:
 @dataclass
 class SignatureMatch:
     """A match between a function and a known signature."""
+
     function_address: int
     function_name: str
     matched_name: str  # canonical name from DB
@@ -124,14 +125,16 @@ class SignatureDB:
         for func in functions:
             entry = self.lookup(func.name)
             if entry is not None:
-                matches.append(SignatureMatch(
-                    function_address=func.address,
-                    function_name=func.name,
-                    matched_name=entry.name,
-                    signature=entry.signature,
-                    category=entry.category,
-                    description=entry.description,
-                ))
+                matches.append(
+                    SignatureMatch(
+                        function_address=func.address,
+                        function_name=func.name,
+                        matched_name=entry.name,
+                        signature=entry.signature,
+                        category=entry.category,
+                        description=entry.description,
+                    )
+                )
         return matches
 
     @property

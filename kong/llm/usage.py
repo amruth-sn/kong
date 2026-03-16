@@ -22,10 +22,18 @@ _DEFAULT_PRICING = PricingTier(input_rate=3.0, output_rate=15.0)
 
 PRICING_REGISTRY: dict[str, PricingTier] = {
     # Anthropic: cache_write = input * 1.25, cache_read = input * 0.10
-    "claude-opus-4-6": PricingTier(5.0, 25.0, cache_write_rate=6.25, cache_read_rate=0.50),
-    "claude-sonnet-4-6": PricingTier(3.0, 15.0, cache_write_rate=3.75, cache_read_rate=0.30),
-    "claude-sonnet-4-20250514": PricingTier(3.0, 15.0, cache_write_rate=3.75, cache_read_rate=0.30),
-    "claude-haiku-4-5-20251001": PricingTier(1.0, 5.0, cache_write_rate=1.25, cache_read_rate=0.10),
+    "claude-opus-4-6": PricingTier(
+        5.0, 25.0, cache_write_rate=6.25, cache_read_rate=0.50
+    ),
+    "claude-sonnet-4-6": PricingTier(
+        3.0, 15.0, cache_write_rate=3.75, cache_read_rate=0.30
+    ),
+    "claude-sonnet-4-20250514": PricingTier(
+        3.0, 15.0, cache_write_rate=3.75, cache_read_rate=0.30
+    ),
+    "claude-haiku-4-5-20251001": PricingTier(
+        1.0, 5.0, cache_write_rate=1.25, cache_read_rate=0.10
+    ),
     # OpenAI: cached input is 50% of input rate, no cache write billing
     "gpt-4o": PricingTier(2.50, 10.00, cache_read_rate=1.25),
     "gpt-4o-2024-11-20": PricingTier(2.50, 10.00, cache_read_rate=1.25),

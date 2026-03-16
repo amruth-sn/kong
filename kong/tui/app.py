@@ -90,7 +90,9 @@ class KongApp(App):
             binary_data = event.data.get("binary_info", {})
             header = self.query_one(BinaryHeader)
             header.set_info(
-                name=self.supervisor.binary_info.name if self.supervisor.binary_info else "unknown",
+                name=self.supervisor.binary_info.name
+                if self.supervisor.binary_info
+                else "unknown",
                 arch=binary_data.get("arch", ""),
                 fmt=binary_data.get("format", ""),
                 compiler=binary_data.get("compiler", ""),
@@ -120,7 +122,11 @@ class KongApp(App):
     def _tick(self) -> None:
         now = time.time()
         current_pause = (now - self._pause_start) if self._pause_start else 0.0
-        elapsed = (now - self._start_time - self._paused_total - current_pause) if self._start_time else 0.0
+        elapsed = (
+            (now - self._start_time - self._paused_total - current_pause)
+            if self._start_time
+            else 0.0
+        )
         llm_calls = self.supervisor.stats.llm_calls
         cost = 0.0
         llm_client = getattr(self.supervisor, "llm_client", None)

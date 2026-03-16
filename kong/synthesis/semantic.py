@@ -75,7 +75,9 @@ class SemanticSynthesizer:
         parts.append("```json")
         parts.append("{")
         parts.append('  "globals": {"DAT_XXXXXXXX": "meaningful_name", ...},')
-        parts.append('  "structs": [{"name": "StructName", "fields": [{"name": "field", "type": "int", "offset": 0}]}, ...],')
+        parts.append(
+            '  "structs": [{"name": "StructName", "fields": [{"name": "field", "type": "int", "offset": 0}]}, ...],'
+        )
         parts.append('  "name_refinements": {"0xADDRESS": "better_name", ...}')
         parts.append("}")
         parts.append("```")
@@ -110,7 +112,9 @@ class SemanticSynthesizer:
 
         for result in eligible:
             parts.append(f"### {result.name} (0x{result.address:08x})")
-            parts.append(f"Classification: {result.classification}, Confidence: {result.confidence}")
+            parts.append(
+                f"Classification: {result.classification}, Confidence: {result.confidence}"
+            )
             parts.append("```c")
             parts.append(decompilations[result.address])
             parts.append("```")
@@ -119,7 +123,9 @@ class SemanticSynthesizer:
         return "\n".join(parts)
 
     @staticmethod
-    def _extract_globals(decompilations: dict[int, str]) -> tuple[dict[str, set[int]], dict[int, int]]:
+    def _extract_globals(
+        decompilations: dict[int, str],
+    ) -> tuple[dict[str, set[int]], dict[int, int]]:
         """Extract globals and per-function xref counts in a single pass."""
         globals_map: dict[str, set[int]] = defaultdict(set)
         xref_counts: dict[int, int] = defaultdict(int)

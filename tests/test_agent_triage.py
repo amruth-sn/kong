@@ -7,8 +7,12 @@ from unittest.mock import MagicMock
 
 from kong.agent.signatures import SignatureDB, SignatureMatch
 from kong.agent.triage import CallGraph, LanguageHints, TriageAgent, TriageResult
-from kong.ghidra.types import BinaryInfo, FunctionClassification, FunctionInfo, StringEntry
-
+from kong.ghidra.types import (
+    BinaryInfo,
+    FunctionClassification,
+    FunctionInfo,
+    StringEntry,
+)
 
 SIGNATURES_DIR = Path(__file__).parent.parent / "kong" / "signatures"
 
@@ -20,8 +24,12 @@ def _func(addr, name, size=100, cls=FunctionClassification.MEDIUM):
 def _make_client(functions=None, binary_info=None, strings=None):
     client = MagicMock()
     client.get_binary_info.return_value = binary_info or BinaryInfo(
-        arch="x86-64", format="ELF", endianness="little", word_size=8,
-        compiler="GCC", name="test_binary",
+        arch="x86-64",
+        format="ELF",
+        endianness="little",
+        word_size=8,
+        compiler="GCC",
+        name="test_binary",
     )
     client.list_functions.return_value = functions or []
     client.get_strings.return_value = strings or []
@@ -227,10 +235,13 @@ class TestCallGraph:
         )
         assert g.edge_count == 1
 
+
 class TestTriageResultCounts:
     def test_classification_counts(self):
         result = TriageResult(
-            binary_info=BinaryInfo(arch="x86", format="ELF", endianness="little", word_size=8),
+            binary_info=BinaryInfo(
+                arch="x86", format="ELF", endianness="little", word_size=8
+            ),
             functions=[
                 _func(1, "a", cls=FunctionClassification.SMALL),
                 _func(2, "b", cls=FunctionClassification.SMALL),
