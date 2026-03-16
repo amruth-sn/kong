@@ -43,7 +43,8 @@ Kong solves this by building rich context windows from Ghidra's program analysis
 - **Syntactic Normalization**: Decompiler output is cleaned up (modulo recovery, negative literal reconstruction, dead assignment removal) before reaching the LLM, reducing noise and token waste. 
 - **Agentic Deobfuscation**: Kong uses an agentic deobfuscation pipeline which can identify and remove obfuscation techniques (Control flow flattening, bogus control flow, instruction substitution, string encryption, VM protection, etc.) from the decompiler output.
 - **Eval Framework**: Built-in evaluation harness that scores analysis output against ground-truth source code, measuring symbol accuracy (word-based Jaccard) and type accuracy (signature component scoring).
-- **Cost-Tracking**: Tracks token usage and costs for each LLM call, and the total cost of the analysis.
+- **Multi-Provider LLM Support**: Works with Anthropic (Claude) and OpenAI (GPT-4o) out of the box. An interactive setup wizard configures providers and smart routing auto-selects whichever has a valid key.
+- **Cost-Tracking**: Tracks token usage and costs per model across providers, with provider-aware pricing.
 
 ## Supported Architectures
 
@@ -128,7 +129,7 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 
 - **Runtime**: Python 3.11+, managed with [uv](https://github.com/astral-sh/uv)
 - **Binary analysis**: [Ghidra](https://ghidra-sre.org/) via [PyGhidra](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/PyGhidra) (in-process, JPype)
-- **LLM**: [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) (Claude)
+- **LLM**: [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) (Claude) and [OpenAI SDK](https://github.com/openai/openai-python) (GPT-4o)
 - **Symbolic analysis**: [z3-solver](https://github.com/Z3Prover/z3)
 - **CLI**: [Click](https://click.palletsprojects.com/)
 - **TUI**: [Textual](https://textual.textualize.io/)
@@ -144,7 +145,9 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 - **uv** — Python package manager ([Install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Ghidra** — The National Security Agency's reverse engineering framework ([Install Ghidra](https://ghidra-sre.org/InstallationGuide.html))
 - **JDK 21+** — Required by Ghidra ([Adoptium](https://adoptium.net/))
-- **Anthropic API key** — Get from [Anthropic Console](https://console.anthropic.com)
+- **LLM API key** — At least one of:
+  - [Anthropic](https://console.anthropic.com/settings/keys) (Claude)
+  - [OpenAI](https://platform.openai.com/api-keys) (GPT-4o)
 
 ### Quick Start
 
@@ -152,14 +155,19 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 # 1. Install Kong
 pip install kong-re
 
-# 2. Set your API key
-export ANTHROPIC_API_KEY="your-api-key"
+# 2. Set your API key(s)
+export ANTHROPIC_API_KEY="sk-ant-..."
+# and/or
+export OPENAI_API_KEY="sk-..."
 
-# 3. Analyze a binary
+# 3. Run the setup wizard (first time only)
+kong setup
+
+# 4. Analyze a binary
 kong analyze ./path/to/stripped_binary
 ```
 
-Kong will auto-detect your Ghidra and JDK installations, load the binary into an in-process Ghidra instance, and run the full pipeline.
+The setup wizard lets you pick which LLM providers to use and sets a default. Kong auto-detects your Ghidra and JDK installations, loads the binary into an in-process Ghidra instance, and runs the full pipeline.
 
 #### From source
 
@@ -167,6 +175,7 @@ Kong will auto-detect your Ghidra and JDK installations, load the binary into an
 git clone https://github.com/amruth-sn/kong.git
 cd kong
 uv sync
+uv run kong setup
 uv run kong analyze ./path/to/stripped_binary
 ```
 
@@ -174,21 +183,32 @@ uv run kong analyze ./path/to/stripped_binary
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for LLM analysis |
+| `ANTHROPIC_API_KEY` | At least one | Anthropic API key (Claude) |
+| `OPENAI_API_KEY` | At least one | OpenAI API key (GPT-4o) |
 | `GHIDRA_INSTALL_DIR` | No | Path to Ghidra installation (auto-detected if not set) |
 | `JAVA_HOME` | No | Path to JDK (auto-detected if not set) |
+| `KONG_CONFIG_DIR` | No | Override config directory (default: `~/.config/kong`) |
 
 ### Usage
 
 ```bash
-# Analyze a stripped binary (full pipeline)
-uv run kong analyze ./binary
+# Run the setup wizard
+kong setup
+
+# Analyze a stripped binary (uses your configured default provider)
+kong analyze ./binary
+
+# Analyze with a specific provider
+kong analyze ./binary --provider openai
+
+# Override the model
+kong analyze ./binary --provider openai --model gpt-4o-mini
 
 # Show binary metadata without running analysis
-uv run kong info ./binary
+kong info ./binary
 
 # Evaluate analysis output against ground-truth source
-uv run kong eval ./analysis.json ./source.c
+kong eval ./analysis.json ./source.c
 ```
 
 ### Output
@@ -206,7 +226,9 @@ kong_output_{binary_name}/
 ```
 kong/
 ├── __main__.py           # CLI entry point (click)
-├── config.py             # KongConfig, GhidraConfig, OutputConfig
+├── config.py             # KongConfig, LLMProvider, LLMConfig
+├── db.py                 # SQLite config store (~/.config/kong/)
+├── banner.py             # ASCII banner, API key helpers
 ├── agent/
 │   ├── supervisor.py     # Pipeline orchestrator
 │   ├── triage.py         # Function enumeration + classification
@@ -221,7 +243,10 @@ kong/
 │   ├── types.py          # FunctionInfo, BinaryInfo, XRef, etc.
 │   └── environment.py    # Ghidra/JDK auto-detection
 ├── llm/
-│   └── client.py         # AnthropicClient, TokenUsage, cost tracking
+│   ├── client.py         # AnthropicClient
+│   ├── openai_client.py  # OpenAIClient
+│   ├── usage.py          # TokenUsage, cost tracking, pricing registry
+│   └── limits.py         # Model-specific limits + rate limiter
 ├── normalizer/
 │   └── syntactic.py      # Decompiler output normalization
 ├── synthesis/
@@ -257,7 +282,8 @@ Also, don't hesitate to reach out to me on [X](https://x.com/0xamruth) or [Linke
 - [Ghidra](https://ghidra-sre.org/)
 - [PyGhidra](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/PyGhidra)
 - [JPype](https://github.com/jpype-project/jpype)
-- [LLM](https://github.com/anthropics/anthropic-sdk-python)
+- [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python)
+- [OpenAI SDK](https://github.com/openai/openai-python)
 - [Z3](https://github.com/Z3Prover/z3)
 - [Textual](https://textual.textualize.io/)
 - [Rich](https://rich.readthedocs.io/)
