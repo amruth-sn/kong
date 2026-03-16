@@ -71,30 +71,38 @@ class RateLimiter:
 
     def wait_if_needed(self, estimated_tokens: int = 0) -> None:
         """Block until it's safe to make the next request."""
-        with self._lock:
-            now = time.monotonic()
-            window_start = now - 60.0
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                window_start = now - 60.0
+                wait = 0.0
 
-            if self._rpm is not None:
-                self._request_times = [
-                    t for t in self._request_times if t > window_start
-                ]
-                if len(self._request_times) >= self._rpm:
-                    sleep_until = self._request_times[0] + 60.0
-                    wait = sleep_until - now
-                    if wait > 0:
-                        time.sleep(wait)
+                if self._rpm is not None:
+                    self._request_times = [
+                        t for t in self._request_times if t > window_start
+                    ]
+                    if len(self._request_times) >= self._rpm:
+                        sleep_until = self._request_times[0] + 60.0
+                        wait = max(wait, sleep_until - now)
 
-            if self._tpm is not None and estimated_tokens > 0:
-                self._token_log = [
-                    (t, n) for t, n in self._token_log if t > window_start
-                ]
-                total_tokens = sum(n for _, n in self._token_log)
-                if total_tokens + estimated_tokens > self._tpm:
-                    sleep_until = self._token_log[0][0] + 60.0 if self._token_log else now
-                    wait = sleep_until - time.monotonic()
-                    if wait > 0:
-                        time.sleep(wait)
+                if self._tpm is not None and estimated_tokens > 0:
+                    self._token_log = [
+                        (t, n) for t, n in self._token_log if t > window_start
+                    ]
+                    total_tokens = sum(n for _, n in self._token_log)
+                    if total_tokens + estimated_tokens > self._tpm:
+                        sleep_until = (
+                            self._token_log[0][0] + 60.0
+                            if self._token_log
+                            else now
+                        )
+                        wait = max(wait, sleep_until - now)
+
+                if wait <= 0:
+                    return
+
+            # Sleep outside the lock so other threads aren't blocked.
+            time.sleep(wait)
 
     def record_request(self, tokens_used: int = 0) -> None:
         """Record that a request was made."""
