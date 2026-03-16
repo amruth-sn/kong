@@ -60,7 +60,7 @@ def _env_var_for(provider: LLMProvider) -> str:
     return _ENV_VARS[provider]
 
 
-def _load_dotenv(provider: LLMProvider = LLMProvider.ANTHROPIC) -> None:
+def _load_dotenv(provider: LLMProvider) -> None:
     """Load the API key for *provider* from .env if not already set.
 
     Checks cwd first, then the package root (two levels up from this file).
@@ -83,7 +83,7 @@ def _load_dotenv(provider: LLMProvider = LLMProvider.ANTHROPIC) -> None:
                 return
 
 
-def check_api_key(provider: LLMProvider = LLMProvider.ANTHROPIC) -> bool:
+def check_api_key(provider: LLMProvider) -> bool:
     _load_dotenv(provider)
     return bool(os.environ.get(_env_var_for(provider)))
 

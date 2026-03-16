@@ -10,12 +10,21 @@ from typing import TYPE_CHECKING
 import click
 from rich.console import Console
 from rich.markup import escape
+from rich.prompt import Prompt
 
 from kong import __version__
 from kong.agent.events import Event, EventType
 from kong.agent.supervisor import Supervisor
-from kong.banner import check_api_key, print_analyze_header, print_banner, print_setup_needed
+from kong.banner import (
+    _ENV_VARS,
+    _KEY_EXAMPLES,
+    _KEY_URLS,
+    check_api_key,
+    print_analyze_header,
+    print_banner,
+)
 from kong.config import GhidraConfig, KongConfig, LLMConfig, LLMProvider, OutputConfig
+from kong.db import get_default_provider, get_enabled_providers, is_setup_complete, save_setup
 from kong.evals.harness import score as eval_score
 from kong.ghidra.client import GhidraClient, GhidraClientError
 from kong.llm.usage import TokenUsage
@@ -36,14 +45,43 @@ _DEFAULT_MODELS: dict[LLMProvider, str] = {
     LLMProvider.OPENAI: "gpt-4o",
 }
 
+_PROVIDER_LABELS: dict[LLMProvider, str] = {
+    LLMProvider.ANTHROPIC: "Anthropic (Claude)",
+    LLMProvider.OPENAI: "OpenAI (GPT-4o)",
+}
+
 
 def create_llm_client(config: LLMConfig) -> LLMClient:
     """Instantiate the appropriate LLM client based on provider config."""
-    # will generalize further in the future
     model = config.model or _DEFAULT_MODELS[config.provider]
     if config.provider is LLMProvider.OPENAI:
         return OpenAIClient(model=model, api_key=config.api_key)
     return AnthropicClient(model=model, api_key=config.api_key)
+
+
+def resolve_provider(cli_override: str | None = None) -> LLMProvider:
+    """Pick the best available provider: CLI flag > DB default > any enabled key."""
+    if cli_override:
+        provider = LLMProvider(cli_override)
+        if check_api_key(provider):
+            return provider
+        console.print(
+            f"[yellow]Warning:[/yellow] --provider {provider.value} specified "
+            f"but {_ENV_VARS[provider]} is not set."
+        )
+        raise SystemExit(1)
+
+    default = get_default_provider()
+    if default and check_api_key(default):
+        return default
+
+    for provider in get_enabled_providers():
+        if check_api_key(provider):
+            return provider
+
+    console.print("[red]No API keys found for any configured provider.[/red]")
+    console.print("Run [bold cyan]kong setup[/bold cyan] to configure providers.")
+    raise SystemExit(1)
 
 
 @click.group(invoke_without_command=True)
@@ -115,8 +153,8 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
 @click.option(
     "--provider", "-p",
     type=click.Choice([p.value for p in LLMProvider], case_sensitive=False),
-    default=LLMProvider.ANTHROPIC.value,
-    help="LLM provider (anthropic or openai).",
+    default=None,
+    help="LLM provider (anthropic or openai). Uses configured default if omitted.",
 )
 @click.option("--model", "-m", default=None, help="Override the LLM model name.")
 @click.pass_context
@@ -127,11 +165,16 @@ def analyze(
     output: str,
     formats: tuple[str, ...],
     ghidra_dir: str | None,
-    provider: str,
+    provider: str | None,
     model: str | None,
 ) -> None:
     """Analyze a binary with Kong's autonomous agent."""
-    llm_provider = LLMProvider(provider)
+    if not is_setup_complete():
+        console.print("[yellow]Kong hasn't been set up yet.[/yellow]")
+        console.print("Run [bold cyan]kong setup[/bold cyan] first.")
+        raise SystemExit(1)
+
+    llm_provider = resolve_provider(provider)
     config = KongConfig(
         ghidra=GhidraConfig(install_dir=ghidra_dir),
         llm=LLMConfig(provider=llm_provider, model=model),
@@ -148,10 +191,6 @@ def analyze(
         output_dir=str(config.output.directory),
         formats=config.output.formats,
     )
-
-    if not check_api_key(llm_provider):
-        print_setup_needed(console, llm_provider)
-        raise SystemExit(1)
 
     if not config.ghidra.install_dir:
         console.print("[red]Ghidra is not installed or not found.[/red]")
@@ -260,33 +299,71 @@ def info(binary: str, ghidra_dir: str | None) -> None:
 
 @cli.command()
 def setup() -> None:
-    """Guided setup for Kong."""
+    """Interactive setup wizard for Kong."""
     print_banner(console)
     console.print()
-
-    step = 1
-    for provider in LLMProvider:
-        env_var = _ENV_VARS[provider]
-        console.print(f"[bold]Step {step}: {provider.display_name} API Key[/bold]")
-        console.print()
-
-        current_key = os.environ.get(env_var, "")
-        if current_key:
-            masked = current_key[:7] + "..." + current_key[-4:]
-            console.print(f"  [green]Found:[/green] {masked}")
-        else:
-            console.print("  [yellow]Not set.[/yellow]")
-            console.print()
-            console.print(f"  Get your key at: [bold]{_KEY_URLS[provider]}[/bold]")
-            console.print(f"  [bold]export {env_var}={_KEY_EXAMPLES[provider]}[/bold]")
-
-        console.print()
-        step += 1
-
-    console.print(f"[bold]Step {step}: Ghidra[/bold]")
+    console.print("[bold]Welcome to Kong setup![/bold]")
     console.print()
 
+    providers = list(LLMProvider)
+    console.print("[bold]Step 1:[/bold] Which LLM providers would you like to use?")
+    console.print()
+    for i, p in enumerate(providers, 1):
+        console.print(f"  [bold]{i}[/bold]) {_PROVIDER_LABELS[p]}")
+    console.print(f"  [bold]{len(providers) + 1}[/bold]) Both")
+    console.print()
+
+    choice = Prompt.ask(
+        "Choice",
+        choices=[str(i) for i in range(1, len(providers) + 2)],
+        console=console,
+    )
+    choice_int = int(choice)
+    if choice_int <= len(providers):
+        enabled = [providers[choice_int - 1]]
+    else:
+        enabled = list(providers)
+
+    console.print()
+    console.print("[bold]Step 2:[/bold] Checking API keys...")
+    console.print()
+
+    any_key_found = False
+    for p in enabled:
+        env_var = _ENV_VARS[p]
+        if check_api_key(p):
+            key = os.environ.get(env_var, "")
+            masked = key[:7] + "..." + key[-4:] if len(key) > 11 else "***"
+            console.print(f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] ({masked})")
+            any_key_found = True
+        else:
+            console.print(f"  {_PROVIDER_LABELS[p]:25s} [yellow]Not set[/yellow]")
+            console.print(f"    Get your key at: [bold]{_KEY_URLS[p]}[/bold]")
+            console.print(f"    [bold]export {env_var}={_KEY_EXAMPLES[p]}[/bold]")
+        console.print()
+
+    if len(enabled) > 1:
+        console.print("[bold]Step 3:[/bold] Which provider should be the default?")
+        console.print()
+        for i, p in enumerate(enabled, 1):
+            console.print(f"  [bold]{i}[/bold]) {_PROVIDER_LABELS[p]}")
+        console.print()
+        default_choice = Prompt.ask(
+            "Default",
+            choices=[str(i) for i in range(1, len(enabled) + 1)],
+            console=console,
+        )
+        default_provider = enabled[int(default_choice) - 1]
+    else:
+        default_provider = enabled[0]
+
+    save_setup(enabled=enabled, default=default_provider)
+
+    console.print()
     ghidra_config = GhidraConfig()
+    step_num = 4 if len(enabled) > 1 else 3
+    console.print(f"[bold]Step {step_num}:[/bold] Ghidra")
+    console.print()
     if ghidra_config.install_dir:
         console.print(f"  [green]Found:[/green] {ghidra_config.install_dir}")
     else:
@@ -299,12 +376,17 @@ def setup() -> None:
         console.print("  Then set [bold]GHIDRA_INSTALL_DIR[/bold] to the install path.")
 
     console.print()
-    has_any_key = any(check_api_key(p) for p in LLMProvider)
-    all_good = has_any_key and ghidra_config.install_dir
-    if all_good:
-        console.print("[bold green]All set! Run [bold]kong analyze <binary>[/bold] to get started.[/bold green]")
+    if any_key_found and ghidra_config.install_dir:
+        console.print(
+            f"[bold green]All set![/bold green] Default provider: "
+            f"[bold]{_PROVIDER_LABELS[default_provider]}[/bold]"
+        )
+        console.print("Run [bold cyan]kong analyze <binary>[/bold cyan] to get started.")
     else:
-        console.print("[yellow]Some dependencies are missing. See above for instructions.[/yellow]")
+        console.print(
+            "[yellow]Setup saved, but some dependencies are missing. "
+            "See above for instructions.[/yellow]"
+        )
 
 
 @cli.command(name="eval")
