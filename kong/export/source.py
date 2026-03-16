@@ -49,7 +49,7 @@ def _format_header(data: ExportData) -> str:
         f" * Arch:     {bi.arch}",
         f" * Format:   {bi.format}",
         f" * Compiler: {bi.compiler}",
-        f" *",
+        " *",
         f" * Functions: {s.total_functions} total, {s.analyzed} analyzed, "
         f"{s.skipped} skipped, {s.errors} errors",
         f" * Renamed:   {s.renamed} | Confirmed: {s.confirmed}",

@@ -11,7 +11,6 @@ from kong.agent.analyzer import (
     StructProposal,
 )
 from kong.agent.events import EventType
-from kong.agent.models import FunctionResult
 from kong.agent.queue import WorkItem
 from kong.agent.supervisor import Supervisor
 from kong.agent.type_recovery import (

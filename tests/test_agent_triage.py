@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from kong.agent.signatures import SignatureDB, SignatureMatch
+from kong.agent.signatures import SignatureDB
 from kong.agent.triage import CallGraph, LanguageHints, TriageAgent, TriageResult
 from kong.ghidra.types import (
     BinaryInfo,

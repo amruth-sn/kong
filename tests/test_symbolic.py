@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from kong.ghidra.types import (
     BasicBlock,
@@ -18,7 +17,6 @@ from kong.symbolic.dead_code import (
 )
 from kong.symbolic.simplifier import (
     PredicateKind,
-    SimplificationResult,
     simplify_expression,
 )
 from kong.symbolic.state_machine import (

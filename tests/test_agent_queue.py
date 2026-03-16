@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kong.agent.queue import WorkItem, WorkQueue
+from kong.agent.queue import WorkQueue
 from kong.ghidra.types import FunctionClassification, FunctionInfo
 
 

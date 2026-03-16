@@ -10,7 +10,6 @@ import pytest
 from kong.llm.client import AnthropicClient
 from kong.llm.tools import (
     DEOBFUSCATION_TOOLS,
-    ToolCallRecord,
     ToolExecutor,
 )
 
@@ -237,7 +236,7 @@ class TestToolUseLoop:
 
             client = AnthropicClient(api_key="test")
             executor = ToolExecutor(MagicMock())
-            response = client.analyze_with_tools(
+            _ = client.analyze_with_tools(
                 prompt="test",
                 system="test system",
                 tools=DEOBFUSCATION_TOOLS,

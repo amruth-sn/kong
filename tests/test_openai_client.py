@@ -6,7 +6,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 from kong.llm.openai_client import OpenAIClient, _convert_tools_to_openai
-from kong.llm.usage import ModelTokenUsage, TokenUsage
+from kong.llm.usage import ModelTokenUsage
 
 
 def _mock_response(text: str, prompt_tokens: int = 100, completion_tokens: int = 50):

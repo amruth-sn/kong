@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
 
 from kong.agent.models import FunctionResult
 from kong.synthesis.semantic import (

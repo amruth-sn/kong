@@ -4,8 +4,6 @@ and the Deobfuscator orchestrator.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,7 +15,6 @@ from kong.agent.deobfuscator import (
     classify_obfuscation,
     load_patterns,
 )
-from kong.agent.models import FunctionResult
 from kong.agent.prompts import DEOBFUSCATION_SYSTEM_PROMPT
 from kong.agent.queue import WorkItem
 from kong.ghidra.types import BinaryInfo, FunctionInfo

@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.message import Message
 
-from kong.agent.events import Event, EventType, Phase
+from kong.agent.events import Event, EventType
 from kong.agent.supervisor import Supervisor
 from kong.tui.widgets import AgentLog, BinaryHeader, ProgressWidget, StatusBar
 
