@@ -295,6 +295,11 @@ openai = [
     { name = "openai" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40" },
@@ -312,6 +317,9 @@ requires-dist = [
     { name = "z3-solver", specifier = ">=4.12" },
 ]
 provides-extras = ["openai", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.0.2" }]
 
 [[package]]
 name = "lief"
