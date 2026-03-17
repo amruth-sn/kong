@@ -127,7 +127,7 @@ class TestCreateLLMClient:
         client = create_llm_client(config)
         assert isinstance(client, OpenAIClient)
         mock_openai_cls.assert_called_once_with(
-            api_key="",
+            api_key="not-needed",
             base_url="http://localhost:11434/v1",
             max_retries=5,
         )

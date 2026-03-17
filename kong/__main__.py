@@ -51,6 +51,7 @@ _PROVIDER_LABELS: dict[LLMProvider, str] = {
     LLMProvider.CUSTOM: "Custom (OpenAI-compatible)",
 }
 
+_NOT_NEEDED_STR = "not-needed"
 
 def create_llm_client(config: LLMConfig) -> LLMClient:
     """Instantiate the appropriate LLM client based on provider config."""
@@ -58,7 +59,10 @@ def create_llm_client(config: LLMConfig) -> LLMClient:
 
     model = config.model or _DEFAULT_MODELS.get(config.provider, "gpt-4o")
     if config.provider is LLMProvider.CUSTOM:
-        api_key = config.api_key if config.api_key else ""
+        # Local servers don't need auth, but the OpenAI SDK rejects None/empty
+        # api_key by falling back to OPENAI_API_KEY env var or raising an error.
+        # A dummy value satisfies the SDK while local servers ignore it.
+        api_key = config.api_key if config.api_key else _NOT_NEEDED_STR
         register_custom_model(model)
         return OpenAIClient(
             model=model,

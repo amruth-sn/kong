@@ -43,7 +43,7 @@ def _probe_custom(config: LLMConfig) -> bool:
 
 def _probe_openai(config: LLMConfig) -> bool:
     try:
-        client = openai.OpenAI(api_key=config.api_key)
+        client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         client.models.list()
         return True
     except openai.AuthenticationError:

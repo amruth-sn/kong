@@ -63,6 +63,23 @@ class TestProbeOpenAI:
         mock_client.models.list.return_value = MagicMock()
         config = LLMConfig(provider=LLMProvider.OPENAI, api_key="sk-test")
         assert probe_endpoint(config) is True
+        mock_openai_cls.assert_called_once_with(api_key="sk-test", base_url=None)
+
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_openai_probe_passes_base_url(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.return_value = MagicMock()
+        config = LLMConfig(
+            provider=LLMProvider.OPENAI,
+            api_key="sk-test",
+            base_url="https://my-proxy.example.com/v1",
+        )
+        assert probe_endpoint(config) is True
+        mock_openai_cls.assert_called_once_with(
+            api_key="sk-test",
+            base_url="https://my-proxy.example.com/v1",
+        )
 
     @patch("kong.llm.probe.openai.OpenAI")
     def test_openai_probe_auth_failure(self, mock_openai_cls):
