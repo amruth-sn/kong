@@ -153,7 +153,7 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 
 ```bash
 # 1. Install Kong
-pip install kong-re
+uv pip install kong-re
 
 # 2. Set your API key(s)
 export ANTHROPIC_API_KEY="sk-ant-..."
