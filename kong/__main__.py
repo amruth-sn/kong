@@ -24,7 +24,7 @@ from kong.banner import (
     print_banner,
 )
 from kong.config import GhidraConfig, KongConfig, LLMConfig, LLMProvider, OutputConfig
-from kong.db import get_default_provider, get_enabled_providers, is_setup_complete, save_setup
+from kong.db import get_custom_config, get_default_provider, get_enabled_providers, is_setup_complete, save_setup
 from kong.evals.harness import score as eval_score
 from kong.ghidra.client import GhidraClient, GhidraClientError
 from kong.llm.usage import TokenUsage
@@ -70,23 +70,50 @@ def create_llm_client(config: LLMConfig) -> LLMClient:
     return AnthropicClient(model=model, api_key=config.api_key)
 
 
-def resolve_provider(cli_override: str | None = None) -> LLMProvider:
+def _int_or_none(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def validate_base_url(url: str) -> str:
+    if not url.startswith(("http://", "https://")):
+        raise click.BadParameter(
+            f"base-url must start with http:// or https:// (got '{url}')"
+        )
+    return url.rstrip("/")
+
+
+def resolve_provider(cli_override: str | None = None, base_url: str | None = None) -> LLMProvider:
     """Pick the best available provider: CLI flag > DB default > any enabled key."""
+    if base_url and not cli_override:
+        return LLMProvider.CUSTOM
+
     if cli_override:
         provider = LLMProvider(cli_override)
+        if provider is LLMProvider.CUSTOM:
+            return provider
         if check_api_key(provider):
             return provider
+        env_var = _ENV_VARS.get(provider, "unknown")
         console.print(
             f"[yellow]Warning:[/yellow] --provider {provider.value} specified "
-            f"but {_ENV_VARS[provider]} is not set."
+            f"but {env_var} is not set."
         )
         raise SystemExit(1)
 
     default = get_default_provider()
+    if default is LLMProvider.CUSTOM:
+        return default
     if default and check_api_key(default):
         return default
 
     for provider in get_enabled_providers():
+        if provider is LLMProvider.CUSTOM:
+            continue
         if check_api_key(provider):
             return provider
 
@@ -165,9 +192,13 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     "--provider", "-p",
     type=click.Choice([p.value for p in LLMProvider], case_sensitive=False),
     default=None,
-    help="LLM provider (anthropic or openai). Uses configured default if omitted.",
+    help="LLM provider (anthropic, openai, or custom).",
 )
 @click.option("--model", "-m", default=None, help="Override the LLM model name.")
+@click.option("--base-url", default=None, help="Custom OpenAI-compatible endpoint URL.")
+@click.option("--max-prompt-chars", type=int, default=None, help="Override prompt size limit.")
+@click.option("--max-chunk-functions", type=int, default=None, help="Override batch size limit.")
+@click.option("--max-output-tokens", type=int, default=None, help="Override output token limit.")
 @click.pass_context
 def analyze(
     ctx: click.Context,
@@ -178,6 +209,10 @@ def analyze(
     ghidra_dir: str | None,
     provider: str | None,
     model: str | None,
+    base_url: str | None,
+    max_prompt_chars: int | None,
+    max_chunk_functions: int | None,
+    max_output_tokens: int | None,
 ) -> None:
     """Analyze a binary with Kong's autonomous agent."""
     if not is_setup_complete():
@@ -185,14 +220,53 @@ def analyze(
         console.print("Run [bold cyan]kong setup[/bold cyan] first.")
         raise SystemExit(1)
 
-    llm_provider = resolve_provider(provider)
+    if base_url:
+        base_url = validate_base_url(base_url)
+        if provider and provider not in ("custom",):
+            console.print("[red]--base-url can only be used with --provider custom[/red]")
+            raise SystemExit(1)
+
+    llm_provider = resolve_provider(provider, base_url=base_url)
+
+    if llm_provider is LLMProvider.CUSTOM:
+        custom_db = get_custom_config()
+        base_url = base_url or custom_db.get("custom_base_url")
+        model = model or custom_db.get("custom_model")
+        if not model:
+            console.print("[red]--model is required for custom provider[/red]")
+            raise SystemExit(1)
+        if not base_url:
+            console.print("[red]--base-url is required for custom provider[/red]")
+            raise SystemExit(1)
+        max_prompt_chars = max_prompt_chars or _int_or_none(custom_db.get("custom_max_prompt_chars"))
+        max_chunk_functions = max_chunk_functions or _int_or_none(custom_db.get("custom_max_chunk_functions"))
+        max_output_tokens = max_output_tokens or _int_or_none(custom_db.get("custom_max_output_tokens"))
+
     config = KongConfig(
         ghidra=GhidraConfig(install_dir=ghidra_dir),
-        llm=LLMConfig(provider=llm_provider, model=model),
+        llm=LLMConfig(
+            provider=llm_provider,
+            model=model,
+            base_url=base_url,
+            max_prompt_chars=max_prompt_chars,
+            max_chunk_functions=max_chunk_functions,
+            max_output_tokens=max_output_tokens,
+        ),
         output=OutputConfig(directory=Path(output), formats=list(formats)),
         headless=headless,
         verbose=ctx.obj["verbose"],
     )
+
+    from kong.llm.probe import probe_endpoint
+
+    if not probe_endpoint(config.llm):
+        console.print("[red]Could not connect to LLM endpoint.[/red]")
+        if llm_provider is LLMProvider.CUSTOM:
+            console.print(f"Ensure your server is running at {config.llm.base_url}")
+        raise SystemExit(1)
+
+    if llm_provider is LLMProvider.CUSTOM:
+        console.print("[dim]Cost tracking disabled for custom provider (token counts still recorded)[/dim]")
 
     binary_path = Path(binary).resolve()
 

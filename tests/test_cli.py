@@ -6,9 +6,11 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from kong.__main__ import cli, create_llm_client
+import click
+
+from kong.__main__ import cli, create_llm_client, resolve_provider, validate_base_url
 from kong.config import LLMConfig, LLMProvider
-from kong.db import save_setup
+from kong.db import get_custom_config, save_setup
 
 
 def _complete_setup(tmp_path, monkeypatch):
@@ -149,3 +151,42 @@ class TestCreateLLMClient:
         config = LLMConfig(provider=LLMProvider.ANTHROPIC, model="claude-opus-4-6")
         client = create_llm_client(config)
         assert isinstance(client, AnthropicClient)
+
+
+class TestResolveProviderCustom:
+    def test_base_url_implies_custom(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        provider = resolve_provider(base_url="http://localhost:8000/v1")
+        assert provider is LLMProvider.CUSTOM
+
+    def test_explicit_custom_provider(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        provider = resolve_provider(cli_override="custom")
+        assert provider is LLMProvider.CUSTOM
+
+    def test_custom_skipped_in_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        save_setup(
+            enabled=[LLMProvider.CUSTOM, LLMProvider.ANTHROPIC],
+            default=LLMProvider.ANTHROPIC,
+        )
+        provider = resolve_provider()
+        assert provider is LLMProvider.ANTHROPIC
+
+
+class TestValidateBaseUrl:
+    def test_valid_http_url(self):
+        assert validate_base_url("http://localhost:8000/v1") == "http://localhost:8000/v1"
+
+    def test_valid_https_url(self):
+        assert validate_base_url("https://api.together.xyz/v1") == "https://api.together.xyz/v1"
+
+    def test_strips_trailing_slash(self):
+        assert validate_base_url("http://localhost:8000/v1/") == "http://localhost:8000/v1"
+
+    def test_rejects_missing_scheme(self):
+        import pytest
+
+        with pytest.raises(click.BadParameter):
+            validate_base_url("localhost:8000/v1")
