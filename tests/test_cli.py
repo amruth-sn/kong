@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from kong.__main__ import cli
-from kong.config import LLMProvider
+from kong.__main__ import cli, create_llm_client
+from kong.config import LLMConfig, LLMProvider
 from kong.db import save_setup
 
 
@@ -79,3 +79,61 @@ def test_eval_with_test_data(tmp_path):
     assert result.exit_code == 0
     assert "hash_string" in result.output
     assert "Symbol Accuracy" in result.output
+
+
+class TestCreateLLMClient:
+    @patch("kong.llm.openai_client.openai.OpenAI")
+    def test_custom_returns_openai_client_with_base_url(self, mock_openai_cls):
+        from kong.llm.openai_client import OpenAIClient
+
+        config = LLMConfig(
+            provider=LLMProvider.CUSTOM,
+            model="llama3:8b",
+            base_url="http://localhost:11434/v1",
+            api_key="test-key",
+        )
+        client = create_llm_client(config)
+        assert isinstance(client, OpenAIClient)
+        mock_openai_cls.assert_called_once_with(
+            api_key="test-key",
+            base_url="http://localhost:11434/v1",
+            max_retries=5,
+        )
+
+    @patch("kong.llm.openai_client.openai.OpenAI")
+    def test_custom_no_auth_passes_empty_string(self, mock_openai_cls):
+        from kong.llm.openai_client import OpenAIClient
+
+        config = LLMConfig(
+            provider=LLMProvider.CUSTOM,
+            model="llama3:8b",
+            base_url="http://localhost:11434/v1",
+        )
+        client = create_llm_client(config)
+        assert isinstance(client, OpenAIClient)
+        mock_openai_cls.assert_called_once_with(
+            api_key="",
+            base_url="http://localhost:11434/v1",
+            max_retries=5,
+        )
+
+    @patch("kong.llm.openai_client.openai.OpenAI")
+    def test_openai_returns_openai_client_no_base_url(self, mock_openai_cls):
+        from kong.llm.openai_client import OpenAIClient
+
+        config = LLMConfig(provider=LLMProvider.OPENAI, model="gpt-4o")
+        client = create_llm_client(config)
+        assert isinstance(client, OpenAIClient)
+        mock_openai_cls.assert_called_once_with(
+            api_key=None,
+            base_url=None,
+            max_retries=5,
+        )
+
+    @patch("kong.llm.client.anthropic.Anthropic")
+    def test_anthropic_returns_anthropic_client(self, mock_anthropic_cls):
+        from kong.llm.client import AnthropicClient
+
+        config = LLMConfig(provider=LLMProvider.ANTHROPIC, model="claude-opus-4-6")
+        client = create_llm_client(config)
+        assert isinstance(client, AnthropicClient)

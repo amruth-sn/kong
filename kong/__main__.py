@@ -48,12 +48,23 @@ _DEFAULT_MODELS: dict[LLMProvider, str] = {
 _PROVIDER_LABELS: dict[LLMProvider, str] = {
     LLMProvider.ANTHROPIC: "Anthropic (Claude)",
     LLMProvider.OPENAI: "OpenAI (GPT-4o)",
+    LLMProvider.CUSTOM: "Custom (OpenAI-compatible)",
 }
 
 
 def create_llm_client(config: LLMConfig) -> LLMClient:
     """Instantiate the appropriate LLM client based on provider config."""
-    model = config.model or _DEFAULT_MODELS[config.provider]
+    from kong.llm.usage import register_custom_model
+
+    model = config.model or _DEFAULT_MODELS.get(config.provider, "gpt-4o")
+    if config.provider is LLMProvider.CUSTOM:
+        api_key = config.api_key if config.api_key else ""
+        register_custom_model(model)
+        return OpenAIClient(
+            model=model,
+            base_url=config.base_url,
+            api_key=api_key,
+        )
     if config.provider is LLMProvider.OPENAI:
         return OpenAIClient(model=model, api_key=config.api_key)
     return AnthropicClient(model=model, api_key=config.api_key)
