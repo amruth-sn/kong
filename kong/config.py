@@ -12,10 +12,15 @@ from kong.ghidra.environment import find_ghidra_install
 class LLMProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    CUSTOM = "custom"
 
     @property
     def display_name(self) -> str:
-        return {LLMProvider.ANTHROPIC: "Anthropic", LLMProvider.OPENAI: "OpenAI"}[self]
+        return {
+            LLMProvider.ANTHROPIC: "Anthropic",
+            LLMProvider.OPENAI: "OpenAI",
+            LLMProvider.CUSTOM: "Custom",
+        }[self]
 
 
 @dataclass
@@ -40,6 +45,10 @@ class LLMConfig:
     provider: LLMProvider = LLMProvider.ANTHROPIC
     model: str | None = None
     api_key: str | None = None
+    base_url: str | None = None
+    max_prompt_chars: int | None = None
+    max_chunk_functions: int | None = None
+    max_output_tokens: int | None = None
 
 
 @dataclass
