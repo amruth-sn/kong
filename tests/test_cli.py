@@ -37,7 +37,8 @@ def test_analyze_no_ghidra_installed(tmp_path, monkeypatch):
 
     runner = CliRunner()
     with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}), \
-         patch("kong.config.find_ghidra_install", return_value=None):
+         patch("kong.config.find_ghidra_install", return_value=None), \
+         patch("kong.llm.probe.probe_endpoint", return_value=True):
         result = runner.invoke(cli, ["analyze", str(binary)])
 
     assert result.exit_code != 0
@@ -190,3 +191,37 @@ class TestValidateBaseUrl:
 
         with pytest.raises(click.BadParameter):
             validate_base_url("localhost:8000/v1")
+
+
+class TestSetupWizardCustom:
+    @patch("kong.llm.probe.probe_endpoint", return_value=False)
+    def test_setup_custom_provider(self, mock_probe, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["setup"],
+            input="3\nhttp://localhost:11434/v1\nllama3:8b\n\n32000\n20\n4096\n",
+        )
+        assert result.exit_code == 0
+        from kong.db import get_default_provider
+
+        assert get_default_provider() == LLMProvider.CUSTOM
+        cfg = get_custom_config()
+        assert cfg["custom_base_url"] == "http://localhost:11434/v1"
+        assert cfg["custom_model"] == "llama3:8b"
+        assert cfg["custom_max_prompt_chars"] == "32000"
+
+    def test_setup_option_4_is_anthropic_plus_openai(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test1234")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test1234")
+        runner = CliRunner()
+        result = runner.invoke(cli, ["setup"], input="4\n1\n")
+        assert result.exit_code == 0
+        from kong.db import get_enabled_providers
+
+        enabled = get_enabled_providers()
+        assert LLMProvider.ANTHROPIC in enabled
+        assert LLMProvider.OPENAI in enabled
+        assert LLMProvider.CUSTOM not in enabled

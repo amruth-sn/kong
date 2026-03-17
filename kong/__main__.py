@@ -390,31 +390,82 @@ def setup() -> None:
     console.print("[bold]Welcome to Kong setup![/bold]")
     console.print()
 
-    providers = list(LLMProvider)
+    from kong.llm.limits import _DEFAULT_LIMITS
+    from kong.llm.probe import probe_endpoint
+
     console.print("[bold]Step 1:[/bold] Which LLM providers would you like to use?")
     console.print()
-    for i, p in enumerate(providers, 1):
-        console.print(f"  [bold]{i}[/bold]) {_PROVIDER_LABELS[p]}")
-    console.print(f"  [bold]{len(providers) + 1}[/bold]) Both")
+    console.print("  [bold]1[/bold]) Anthropic (Claude)")
+    console.print("  [bold]2[/bold]) OpenAI (GPT-4o)")
+    console.print("  [bold]3[/bold]) Custom endpoint (OpenAI-compatible)")
+    console.print("  [bold]4[/bold]) Anthropic + OpenAI")
     console.print()
 
-    choice = Prompt.ask(
-        "Choice",
-        choices=[str(i) for i in range(1, len(providers) + 2)],
-        console=console,
-    )
+    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4"], console=console)
     choice_int = int(choice)
-    if choice_int <= len(providers):
-        enabled = [providers[choice_int - 1]]
+
+    custom_config: dict[str, str] | None = None
+    if choice_int == 1:
+        enabled: list[LLMProvider] = [LLMProvider.ANTHROPIC]
+    elif choice_int == 2:
+        enabled = [LLMProvider.OPENAI]
+    elif choice_int == 3:
+        enabled = [LLMProvider.CUSTOM]
     else:
-        enabled = list(providers)
+        enabled = [LLMProvider.ANTHROPIC, LLMProvider.OPENAI]
+
+    if LLMProvider.CUSTOM in enabled:
+        console.print()
+        console.print("[bold]Step 2:[/bold] Configure custom endpoint")
+        console.print()
+        custom_base_url = Prompt.ask("  Endpoint URL", console=console)
+        custom_base_url = validate_base_url(custom_base_url)
+        custom_model = Prompt.ask("  Model name", console=console)
+        custom_api_key = Prompt.ask("  API key (leave blank for none)", default="", console=console)
+        custom_max_pc = Prompt.ask(
+            "  Max prompt size (chars)",
+            default=str(_DEFAULT_LIMITS.max_prompt_chars),
+            console=console,
+        )
+        custom_max_cf = Prompt.ask(
+            "  Max functions per batch",
+            default=str(_DEFAULT_LIMITS.max_chunk_functions),
+            console=console,
+        )
+        custom_max_ot = Prompt.ask(
+            "  Max output tokens",
+            default=str(_DEFAULT_LIMITS.max_output_tokens),
+            console=console,
+        )
+        custom_config = {
+            "custom_base_url": custom_base_url,
+            "custom_model": custom_model,
+            "custom_api_key": custom_api_key,
+            "custom_max_prompt_chars": custom_max_pc,
+            "custom_max_chunk_functions": custom_max_cf,
+            "custom_max_output_tokens": custom_max_ot,
+        }
+
+        console.print()
+        probe_cfg = LLMConfig(
+            provider=LLMProvider.CUSTOM,
+            base_url=custom_base_url,
+            api_key=custom_api_key or None,
+        )
+        if probe_endpoint(probe_cfg):
+            console.print("  [green]Connected successfully.[/green]")
+        else:
+            console.print("  [yellow]Could not connect (server may not be running). Config saved anyway.[/yellow]")
 
     console.print()
-    console.print("[bold]Step 2:[/bold] Checking API keys...")
+    console.print("[bold]Step 2:[/bold] Checking API keys..." if LLMProvider.CUSTOM not in enabled else "[bold]Step 3:[/bold] Checking API keys...")
     console.print()
 
     any_key_found = False
     for p in enabled:
+        if p is LLMProvider.CUSTOM:
+            any_key_found = True
+            continue
         env_var = _ENV_VARS[p]
         if check_api_key(p):
             key = os.environ.get(env_var, "")
@@ -427,27 +478,27 @@ def setup() -> None:
             console.print(f"    [bold]export {env_var}={_KEY_EXAMPLES[p]}[/bold]")
         console.print()
 
-    if len(enabled) > 1:
+    non_custom = [p for p in enabled if p is not LLMProvider.CUSTOM]
+    if len(non_custom) > 1:
         console.print("[bold]Step 3:[/bold] Which provider should be the default?")
         console.print()
-        for i, p in enumerate(enabled, 1):
+        for i, p in enumerate(non_custom, 1):
             console.print(f"  [bold]{i}[/bold]) {_PROVIDER_LABELS[p]}")
         console.print()
         default_choice = Prompt.ask(
             "Default",
-            choices=[str(i) for i in range(1, len(enabled) + 1)],
+            choices=[str(i) for i in range(1, len(non_custom) + 1)],
             console=console,
         )
-        default_provider = enabled[int(default_choice) - 1]
+        default_provider = non_custom[int(default_choice) - 1]
     else:
         default_provider = enabled[0]
 
-    save_setup(enabled=enabled, default=default_provider)
+    save_setup(enabled=enabled, default=default_provider, custom_config=custom_config)
 
     console.print()
     ghidra_config = GhidraConfig()
-    step_num = 4 if len(enabled) > 1 else 3
-    console.print(f"[bold]Step {step_num}:[/bold] Ghidra")
+    console.print("[bold]Ghidra[/bold]")
     console.print()
     if ghidra_config.install_dir:
         console.print(f"  [green]Found:[/green] {ghidra_config.install_dir}")
