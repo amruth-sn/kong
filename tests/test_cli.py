@@ -81,6 +81,18 @@ def test_eval_with_test_data(tmp_path):
     assert "Symbol Accuracy" in result.output
 
 
+class TestBannerCustomProvider:
+    def test_env_vars_does_not_have_custom(self):
+        from kong.banner import _ENV_VARS
+
+        assert LLMProvider.CUSTOM not in _ENV_VARS
+
+    def test_check_api_key_returns_true_for_custom(self):
+        from kong.banner import check_api_key
+
+        assert check_api_key(LLMProvider.CUSTOM) is True
+
+
 class TestCreateLLMClient:
     @patch("kong.llm.openai_client.openai.OpenAI")
     def test_custom_returns_openai_client_with_base_url(self, mock_openai_cls):
