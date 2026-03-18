@@ -40,10 +40,7 @@ Issues = "https://github.com/amruth-sn/kong/issues"
 [project.scripts]
 kong = "kong.__main__:cli"
 
-[project.optional-dependencies]
-openai = [
-    "openai>=1.0",
-]
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
