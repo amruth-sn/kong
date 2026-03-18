@@ -232,10 +232,12 @@ def analyze(
 
     llm_provider = resolve_provider(provider, base_url=base_url)
 
+    api_key: str | None = None
     if llm_provider is LLMProvider.CUSTOM:
         custom_db = get_custom_config()
         base_url = base_url or custom_db.get("custom_base_url")
         model = model or custom_db.get("custom_model")
+        api_key = custom_db.get("custom_api_key") or None
         if not model:
             console.print("[red]--model is required for custom provider[/red]")
             raise SystemExit(1)
@@ -254,6 +256,7 @@ def analyze(
         llm=LLMConfig(
             provider=llm_provider,
             model=model,
+            api_key=api_key,
             base_url=base_url,
             max_prompt_chars=max_prompt_chars,
             max_chunk_functions=max_chunk_functions,
