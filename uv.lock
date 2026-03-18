@@ -286,18 +286,10 @@ dependencies = [
     { name = "z3-solver" },
 ]
 
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-openai = [
-    { name = "openai" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
@@ -308,18 +300,17 @@ requires-dist = [
     { name = "json-repair", specifier = ">=0.58.5" },
     { name = "lief", specifier = ">=0.15" },
     { name = "openai", specifier = ">=1.0" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
     { name = "pyghidra", specifier = ">=2.2.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "rich", specifier = ">=13.0" },
     { name = "textual", specifier = ">=1.0" },
     { name = "z3-solver", specifier = ">=4.12" },
 ]
-provides-extras = ["openai", "dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.0.2" }]
+dev = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+]
 
 [[package]]
 name = "lief"
