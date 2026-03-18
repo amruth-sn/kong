@@ -228,7 +228,7 @@ class TestSetupWizardCustom:
 
 
 class TestCustomProviderIntegration:
-    @patch("kong.llm.probe.httpx.get")
+    @patch("kong.llm.probe.probe_endpoint", return_value=True)
     @patch("kong.llm.openai_client.openai.OpenAI")
     @patch("kong.config.find_ghidra_install", return_value=None)
     def test_analyze_with_base_url_flag(
@@ -236,7 +236,6 @@ class TestCustomProviderIntegration:
     ):
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
         save_setup(enabled=[LLMProvider.CUSTOM], default=LLMProvider.CUSTOM)
-        mock_probe.return_value = MagicMock(status_code=200, json=lambda: {"data": []})
 
         binary = tmp_path / "test_binary"
         binary.write_bytes(b"\x00" * 16)

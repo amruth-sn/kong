@@ -151,6 +151,7 @@ def cli(ctx: click.Context, verbose: bool) -> None:
 
 def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     stats = supervisor.stats
+    is_custom = supervisor.config.llm.provider is LLMProvider.CUSTOM
     console.print()
     console.print(
         f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named "
@@ -163,14 +164,27 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     console.print(f"[bold]LLM calls:[/bold] {stats.llm_calls}")
     usage = getattr(llm_client, "usage", None)
     if isinstance(usage, TokenUsage):
+        console.print(
+            f"[bold]Tokens:[/bold] {usage.input_tokens:,} in / "
+            f"{usage.output_tokens:,} out / "
+            f"{usage.total_tokens:,} total"
+        )
         for model_name, mu in usage.by_model.items():
-            short_name = model_name.split("-")[1] if "-" in model_name else model_name
-            console.print(
-                f"  {short_name}: {mu.calls} calls, "
-                f"${mu.cost_usd(model_name):.4f}"
-            )
-    total_cost = getattr(llm_client, "total_cost_usd", 0.0)
-    console.print(f"[bold]Cost:[/bold] ${total_cost:.4f}")
+            if is_custom:
+                console.print(
+                    f"  {model_name}: {mu.calls} calls, "
+                    f"{mu.input_tokens:,} in / {mu.output_tokens:,} out"
+                )
+            else:
+                console.print(
+                    f"  {model_name}: {mu.calls} calls, "
+                    f"${mu.cost_usd(model_name):.4f}"
+                )
+    if is_custom:
+        console.print("[dim]Cost tracking disabled for custom provider[/dim]")
+    else:
+        total_cost = getattr(llm_client, "total_cost_usd", 0.0)
+        console.print(f"[bold]Cost:[/bold] ${total_cost:.4f}")
     console.print(f"[bold]Duration:[/bold] {stats.duration_seconds:.1f}s")
 
 
@@ -232,10 +246,12 @@ def analyze(
 
     llm_provider = resolve_provider(provider, base_url=base_url)
 
+    api_key: str | None = None
     if llm_provider is LLMProvider.CUSTOM:
         custom_db = get_custom_config()
         base_url = base_url or custom_db.get("custom_base_url")
         model = model or custom_db.get("custom_model")
+        api_key = custom_db.get("custom_api_key") or None
         if not model:
             console.print("[red]--model is required for custom provider[/red]")
             raise SystemExit(1)
@@ -254,6 +270,7 @@ def analyze(
         llm=LLMConfig(
             provider=llm_provider,
             model=model,
+            api_key=api_key,
             base_url=base_url,
             max_prompt_chars=max_prompt_chars,
             max_chunk_functions=max_chunk_functions,
@@ -400,11 +417,22 @@ def setup() -> None:
     from kong.llm.limits import _DEFAULT_LIMITS
     from kong.llm.probe import probe_endpoint
 
+    current_default = get_default_provider()
+    current_enabled = get_enabled_providers()
+    saved_custom = get_custom_config()
+
+    def _current_marker(provider: LLMProvider) -> str:
+        if provider == current_default:
+            return " [green](current default)[/green]"
+        if provider in current_enabled:
+            return " [cyan](enabled)[/cyan]"
+        return ""
+
     console.print("[bold]Step 1:[/bold] Which LLM providers would you like to use?")
     console.print()
-    console.print("  [bold]1[/bold]) Anthropic (Claude)")
-    console.print("  [bold]2[/bold]) OpenAI (GPT-4o)")
-    console.print("  [bold]3[/bold]) Custom endpoint (OpenAI-compatible)")
+    console.print(f"  [bold]1[/bold]) Anthropic (Claude){_current_marker(LLMProvider.ANTHROPIC)}")
+    console.print(f"  [bold]2[/bold]) OpenAI (GPT-4o){_current_marker(LLMProvider.OPENAI)}")
+    console.print(f"  [bold]3[/bold]) Custom endpoint (OpenAI-compatible){_current_marker(LLMProvider.CUSTOM)}")
     console.print("  [bold]4[/bold]) Anthropic + OpenAI")
     console.print()
 
@@ -422,26 +450,39 @@ def setup() -> None:
         enabled = [LLMProvider.ANTHROPIC, LLMProvider.OPENAI]
 
     if LLMProvider.CUSTOM in enabled:
+        saved_url = saved_custom.get("custom_base_url", "")
+        saved_model = saved_custom.get("custom_model", "")
+        saved_key = saved_custom.get("custom_api_key", "")
+        saved_max_pc = saved_custom.get("custom_max_prompt_chars", str(_DEFAULT_LIMITS.max_prompt_chars))
+        saved_max_cf = saved_custom.get("custom_max_chunk_functions", str(_DEFAULT_LIMITS.max_chunk_functions))
+        saved_max_ot = saved_custom.get("custom_max_output_tokens", str(_DEFAULT_LIMITS.max_output_tokens))
+
         console.print()
         console.print("[bold]Step 2:[/bold] Configure custom endpoint")
         console.print()
-        custom_base_url = Prompt.ask("  Endpoint URL", console=console)
+        if not saved_url:
+            console.print("  Examples:", style="dim")
+            console.print("    http://localhost:11434/v1      (Ollama)", style="dim")
+            console.print("    http://localhost:8000/v1       (vLLM)", style="dim")
+            console.print("    https://openrouter.ai/api/v1  (OpenRouter)", style="dim")
+            console.print()
+        custom_base_url = Prompt.ask("  Endpoint URL", default=saved_url or None, console=console)
         custom_base_url = validate_base_url(custom_base_url)
-        custom_model = Prompt.ask("  Model name", console=console)
-        custom_api_key = Prompt.ask("  API key (leave blank for none)", default="", console=console)
+        custom_model = Prompt.ask("  Model name", default=saved_model or None, console=console)
+        custom_api_key = Prompt.ask("  API key (leave blank for none)", default=saved_key, console=console)
         custom_max_pc = Prompt.ask(
             "  Max prompt size (chars)",
-            default=str(_DEFAULT_LIMITS.max_prompt_chars),
+            default=saved_max_pc,
             console=console,
         )
         custom_max_cf = Prompt.ask(
             "  Max functions per batch",
-            default=str(_DEFAULT_LIMITS.max_chunk_functions),
+            default=saved_max_cf,
             console=console,
         )
         custom_max_ot = Prompt.ask(
             "  Max output tokens",
-            default=str(_DEFAULT_LIMITS.max_output_tokens),
+            default=saved_max_ot,
             console=console,
         )
         custom_config = {
@@ -454,6 +495,7 @@ def setup() -> None:
         }
 
         console.print()
+        console.print("  Probing endpoint...")
         probe_cfg = LLMConfig(
             provider=LLMProvider.CUSTOM,
             base_url=custom_base_url,

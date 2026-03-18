@@ -9,12 +9,13 @@ from __future__ import annotations
 import logging
 
 import anthropic
-import httpx
 import openai
 
 from kong.config import LLMConfig, LLMProvider
 
 logger = logging.getLogger(__name__)
+
+_PROBE_DUMMY_KEY = "not-needed"
 
 
 def probe_endpoint(config: LLMConfig) -> bool:
@@ -26,18 +27,22 @@ def probe_endpoint(config: LLMConfig) -> bool:
 
 
 def _probe_custom(config: LLMConfig) -> bool:
-    url = f"{config.base_url}/models"
+    api_key = config.api_key if config.api_key else _PROBE_DUMMY_KEY
     try:
-        response = httpx.get(url, timeout=10.0)
-        if response.status_code == 200:
-            return True
-        logger.warning("Custom endpoint returned status %d", response.status_code)
+        client = openai.OpenAI(api_key=api_key, base_url=config.base_url)
+        client.models.list()
+        return True
+    except openai.AuthenticationError:
+        logger.warning("Custom endpoint rejected API key")
         return False
-    except (httpx.ConnectError, httpx.TimeoutException):
+    except openai.APIConnectionError:
         logger.warning("Could not connect to %s", config.base_url)
         return False
-    except httpx.HTTPError as e:
-        logger.warning("HTTP error probing %s: %s", config.base_url, e)
+    except openai.APIError as e:
+        logger.warning("Custom endpoint error: %s", e.message)
+        return False
+    except Exception as e:
+        logger.warning("Could not validate %s: %s", config.base_url, e)
         return False
 
 
@@ -50,7 +55,7 @@ def _probe_openai(config: LLMConfig) -> bool:
         logger.warning("OpenAI API key is invalid")
         return False
     except openai.APIError as e:
-        logger.warning("OpenAI API error: %s", e)
+        logger.warning("OpenAI API error: %s", e.message)
         return False
 
 
@@ -63,5 +68,5 @@ def _probe_anthropic(config: LLMConfig) -> bool:
         logger.warning("Anthropic API key is invalid")
         return False
     except anthropic.APIError as e:
-        logger.warning("Anthropic API error: %s", e)
+        logger.warning("Anthropic API error: %s", e.message)
         return False

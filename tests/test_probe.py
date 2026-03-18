@@ -10,47 +10,78 @@ from kong.llm.probe import probe_endpoint
 
 
 class TestProbeCustom:
-    @patch("kong.llm.probe.httpx.get")
-    def test_custom_probe_success(self, mock_get):
-        mock_get.return_value = MagicMock(status_code=200, json=lambda: {"data": []})
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_custom_probe_success(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.return_value = MagicMock()
         config = LLMConfig(
             provider=LLMProvider.CUSTOM,
             base_url="http://localhost:11434/v1",
         )
         assert probe_endpoint(config) is True
-        mock_get.assert_called_once_with(
-            "http://localhost:11434/v1/models",
-            timeout=10.0,
+        mock_openai_cls.assert_called_once_with(
+            api_key="not-needed",
+            base_url="http://localhost:11434/v1",
         )
 
-    @patch("kong.llm.probe.httpx.get")
-    def test_custom_probe_connection_error(self, mock_get):
-        import httpx
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_custom_probe_with_api_key(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.return_value = MagicMock()
+        config = LLMConfig(
+            provider=LLMProvider.CUSTOM,
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-or-test",
+        )
+        assert probe_endpoint(config) is True
+        mock_openai_cls.assert_called_once_with(
+            api_key="sk-or-test",
+            base_url="https://openrouter.ai/api/v1",
+        )
 
-        mock_get.side_effect = httpx.ConnectError("Connection refused")
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_custom_probe_connection_error(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.side_effect = openai.APIConnectionError(
+            request=MagicMock(),
+        )
         config = LLMConfig(
             provider=LLMProvider.CUSTOM,
             base_url="http://localhost:11434/v1",
         )
         assert probe_endpoint(config) is False
 
-    @patch("kong.llm.probe.httpx.get")
-    def test_custom_probe_timeout(self, mock_get):
-        import httpx
-
-        mock_get.side_effect = httpx.ReadTimeout("timed out")
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_custom_probe_non_openai_endpoint(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.side_effect = openai.APIStatusError(
+            message="not found",
+            response=MagicMock(status_code=404, reason_phrase="Not Found"),
+            body=None,
+        )
         config = LLMConfig(
             provider=LLMProvider.CUSTOM,
-            base_url="http://localhost:11434/v1",
+            base_url="https://example.com",
         )
         assert probe_endpoint(config) is False
 
-    @patch("kong.llm.probe.httpx.get")
-    def test_custom_probe_non_200(self, mock_get):
-        mock_get.return_value = MagicMock(status_code=500)
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_custom_probe_auth_failure(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.side_effect = openai.AuthenticationError(
+            message="invalid key",
+            response=MagicMock(status_code=401),
+            body=None,
+        )
         config = LLMConfig(
             provider=LLMProvider.CUSTOM,
-            base_url="http://localhost:11434/v1",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="bad-key",
         )
         assert probe_endpoint(config) is False
 

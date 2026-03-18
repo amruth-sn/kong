@@ -31,6 +31,19 @@ from kong.synthesis.semantic import SemanticSynthesizer, SynthesisResult
 logger = logging.getLogger(__name__)
 
 
+def _clean_api_error(exc: Exception) -> str:
+    """Extract a concise error message from LLM API exceptions.
+
+    The OpenAI SDK embeds raw HTTP response bodies (often HTML from proxies)
+    in exception messages. This extracts just the useful parts.
+    """
+    import openai
+
+    if isinstance(exc, openai.APIStatusError):
+        return f"HTTP {exc.status_code}: {exc.response.reason_phrase}"
+    return str(exc)[:200]
+
+
 class Supervisor:
     """Main agent loop that orchestrates the full analysis pipeline.
 
@@ -273,16 +286,17 @@ class Supervisor:
             try:
                 result = self._analyze_function_sequential(item)
             except Exception as e:
+                err_msg = _clean_api_error(e)
                 result = FunctionResult(
                     address=func.address,
                     original_name=func.name,
-                    error=str(e),
+                    error=err_msg,
                 )
                 self._emit(Event(
                     type=EventType.FUNCTION_ERROR,
                     phase=Phase.ANALYSIS,
-                    message=f"Error analyzing {func.name}: {e}",
-                    data={"address": func.address, "error": str(e)},
+                    message=f"Error analyzing {func.name}: {err_msg}",
+                    data={"address": func.address, "error": err_msg},
                 ))
             self._record_analysis_result(func, result)
 
@@ -398,19 +412,20 @@ class Supervisor:
                     prompt, model=self.llm_client.model,
                 )
             except Exception as e:
-                logger.warning("Chunk %d/%d failed: %s", chunk_num, total_chunks, e)
+                err_msg = _clean_api_error(e)
+                logger.warning("Chunk %d/%d failed: %s", chunk_num, total_chunks, err_msg)
                 for item, _ in chunk:
                     func = item.function
                     result = FunctionResult(
                         address=func.address,
                         original_name=func.name,
-                        error=f"Chunk call failed: {e}",
+                        error=f"Chunk call failed: {err_msg}",
                     )
                     self._emit(Event(
                         type=EventType.FUNCTION_ERROR,
                         phase=Phase.ANALYSIS,
-                        message=f"Error analyzing {func.name}: {e}",
-                        data={"address": func.address, "error": str(e)},
+                        message=f"Error analyzing {func.name}: {err_msg}",
+                        data={"address": func.address, "error": err_msg},
                     ))
                     self._record_analysis_result(func, result)
                 continue
