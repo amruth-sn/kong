@@ -151,6 +151,7 @@ def cli(ctx: click.Context, verbose: bool) -> None:
 
 def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     stats = supervisor.stats
+    is_custom = supervisor.config.llm.provider is LLMProvider.CUSTOM
     console.print()
     console.print(
         f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named "
@@ -163,14 +164,27 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     console.print(f"[bold]LLM calls:[/bold] {stats.llm_calls}")
     usage = getattr(llm_client, "usage", None)
     if isinstance(usage, TokenUsage):
+        console.print(
+            f"[bold]Tokens:[/bold] {usage.input_tokens:,} in / "
+            f"{usage.output_tokens:,} out / "
+            f"{usage.total_tokens:,} total"
+        )
         for model_name, mu in usage.by_model.items():
-            short_name = model_name.split("-")[1] if "-" in model_name else model_name
-            console.print(
-                f"  {short_name}: {mu.calls} calls, "
-                f"${mu.cost_usd(model_name):.4f}"
-            )
-    total_cost = getattr(llm_client, "total_cost_usd", 0.0)
-    console.print(f"[bold]Cost:[/bold] ${total_cost:.4f}")
+            if is_custom:
+                console.print(
+                    f"  {model_name}: {mu.calls} calls, "
+                    f"{mu.input_tokens:,} in / {mu.output_tokens:,} out"
+                )
+            else:
+                console.print(
+                    f"  {model_name}: {mu.calls} calls, "
+                    f"${mu.cost_usd(model_name):.4f}"
+                )
+    if is_custom:
+        console.print("[dim]Cost tracking disabled for custom provider[/dim]")
+    else:
+        total_cost = getattr(llm_client, "total_cost_usd", 0.0)
+        console.print(f"[bold]Cost:[/bold] ${total_cost:.4f}")
     console.print(f"[bold]Duration:[/bold] {stats.duration_seconds:.1f}s")
 
 
