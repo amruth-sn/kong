@@ -41,7 +41,7 @@ class TestSetupWizard:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test1234")
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["setup"], input="3\n1\n")
+        result = runner.invoke(cli, ["setup"], input="4\n1\n")
 
         assert result.exit_code == 0
         assert get_enabled_providers() == [LLMProvider.ANTHROPIC, LLMProvider.OPENAI]
@@ -53,7 +53,7 @@ class TestSetupWizard:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test1234")
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["setup"], input="3\n2\n")
+        result = runner.invoke(cli, ["setup"], input="4\n2\n")
 
         assert result.exit_code == 0
         assert get_default_provider() is LLMProvider.OPENAI
@@ -121,7 +121,8 @@ class TestAnalyzeSetupGate:
         binary.write_bytes(b"\x00" * 16)
 
         runner = CliRunner()
-        with patch("kong.config.find_ghidra_install", return_value=None):
+        with patch("kong.config.find_ghidra_install", return_value=None), \
+             patch("kong.llm.probe.probe_endpoint", return_value=True):
             result = runner.invoke(
                 cli, ["analyze", str(binary), "--provider", "openai"]
             )
@@ -143,7 +144,8 @@ class TestAnalyzeSetupGate:
         binary.write_bytes(b"\x00" * 16)
 
         runner = CliRunner()
-        with patch("kong.config.find_ghidra_install", return_value=None):
+        with patch("kong.config.find_ghidra_install", return_value=None), \
+             patch("kong.llm.probe.probe_endpoint", return_value=True):
             result = runner.invoke(cli, ["analyze", str(binary)])
 
         assert "not installed" in result.output.lower() or "not found" in result.output.lower()

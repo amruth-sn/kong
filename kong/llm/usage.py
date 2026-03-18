@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from kong.config import LLMProvider
+
 
 @dataclass(frozen=True)
 class PricingTier:
@@ -36,9 +38,18 @@ PRICING_REGISTRY: dict[str, PricingTier] = {
 }
 
 
-def get_pricing(model: str) -> PricingTier:
-    """Look up pricing for a model, falling back to a sensible default."""
+_ZERO_PRICING = PricingTier(0.0, 0.0, 0.0, 0.0)
+
+
+def get_pricing(model: str, provider: LLMProvider | None = None) -> PricingTier:
+    if provider is LLMProvider.CUSTOM:
+        return _ZERO_PRICING
     return PRICING_REGISTRY.get(model, _DEFAULT_PRICING)
+
+
+def register_custom_model(model: str) -> None:
+    if model not in PRICING_REGISTRY:
+        PRICING_REGISTRY[model] = _ZERO_PRICING
 
 
 @dataclass

@@ -95,12 +95,35 @@ def get_enabled_providers() -> list[LLMProvider]:
         return []
 
 
+_CUSTOM_KEYS = [
+    "custom_base_url",
+    "custom_model",
+    "custom_api_key",
+    "custom_max_prompt_chars",
+    "custom_max_chunk_functions",
+    "custom_max_output_tokens",
+]
+
+
+def get_custom_config() -> dict[str, str]:
+    result = {}
+    for key in _CUSTOM_KEYS:
+        value = read_config(key)
+        if value is not None:
+            result[key] = value
+    return result
+
+
 def save_setup(
     enabled: list[LLMProvider],
     default: LLMProvider,
+    custom_config: dict[str, str] | None = None,
 ) -> None:
-    write_configs({
+    pairs = {
         "enabled_providers": json.dumps([p.value for p in enabled]),
         "default_provider": default.value,
         "setup_complete": "true",
-    })
+    }
+    if custom_config:
+        pairs.update(custom_config)
+    write_configs(pairs)

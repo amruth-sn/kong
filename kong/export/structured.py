@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from kong.agent.models import FunctionResult
+from kong.config import LLMProvider
 from kong.export.source import ExportData
 
 
@@ -20,8 +21,9 @@ def _build_binary_section(data: ExportData) -> dict[str, str | int]:
     }
 
 
-def _build_stats_section(data: ExportData) -> dict[str, int | float]:
+def _build_stats_section(data: ExportData) -> dict[str, int | float | bool]:
     s = data.stats
+    cost_tracking = data.provider is not LLMProvider.CUSTOM if data.provider else True
     return {
         "total_functions": s.total_functions,
         "analyzed": s.analyzed,
@@ -36,6 +38,7 @@ def _build_stats_section(data: ExportData) -> dict[str, int | float]:
         "llm_calls": s.llm_calls,
         "duration_seconds": data.duration_seconds,
         "cost_usd": data.token_usage.total_cost_usd,
+        "cost_tracking": cost_tracking,
     }
 
 

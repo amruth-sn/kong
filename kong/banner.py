@@ -56,8 +56,8 @@ _KEY_URLS: dict[LLMProvider, str] = {
 }
 
 
-def _env_var_for(provider: LLMProvider) -> str:
-    return _ENV_VARS[provider]
+def _env_var_for(provider: LLMProvider) -> str | None:
+    return _ENV_VARS.get(provider)
 
 
 def _load_dotenv(provider: LLMProvider) -> None:
@@ -66,6 +66,8 @@ def _load_dotenv(provider: LLMProvider) -> None:
     Checks cwd first, then the package root (two levels up from this file).
     """
     env_var = _env_var_for(provider)
+    if env_var is None:
+        return
     if os.environ.get(env_var):
         return
     package_root = Path(__file__).resolve().parent.parent
@@ -84,20 +86,29 @@ def _load_dotenv(provider: LLMProvider) -> None:
 
 
 def check_api_key(provider: LLMProvider) -> bool:
+    env_var = _env_var_for(provider)
+    if env_var is None:
+        return True
     _load_dotenv(provider)
-    return bool(os.environ.get(_env_var_for(provider)))
+    return bool(os.environ.get(env_var))
 
 
 def print_setup_needed(console: Console, provider: LLMProvider = LLMProvider.ANTHROPIC) -> None:
     env_var = _env_var_for(provider)
+    if env_var is None:
+        console.print()
+        console.print("[bold red]Custom provider not configured.[/bold red]")
+        console.print("Run [bold cyan]kong setup[/bold cyan] to configure a custom endpoint.")
+        return
     console.print()
     console.print(f"[bold red]{env_var} is not set.[/bold red]")
     console.print()
     console.print(f"Kong requires a {provider.display_name} API key to analyze binaries.")
     console.print("Run [bold cyan]kong setup[/bold cyan] for guided configuration.")
     console.print()
+    key_example = _KEY_EXAMPLES.get(provider, "your-key-here")
     console.print("Or set it directly:")
-    console.print(f"  [bold]export {env_var}={_KEY_EXAMPLES[provider]}[/bold]")
+    console.print(f"  [bold]export {env_var}={key_example}[/bold]")
 
 
 def print_analyze_header(

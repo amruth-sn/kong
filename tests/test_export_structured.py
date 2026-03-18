@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from kong.agent.models import FunctionResult
-from kong.agent.models import AnalysisStats
+from kong.agent.models import AnalysisStats, FunctionResult
+from kong.config import LLMProvider
 from kong.export.source import ExportData
 from kong.export.structured import export_json
 from kong.ghidra.types import BinaryInfo
@@ -262,3 +262,20 @@ def test_functions_sorted_by_address(
     parsed = _export_and_load(data, tmp_path)
     addresses = [f["address"] for f in parsed["functions"]]
     assert addresses == ["0x00001000", "0x00003000", "0x00005000"]
+
+
+class TestCostTrackingField:
+    def test_json_export_includes_cost_tracking_true(
+        self, tmp_path, binary_info, stats, token_usage, sample_results,
+    ):
+        data = _make_data(binary_info, stats, token_usage, sample_results)
+        parsed = _export_and_load(data, tmp_path)
+        assert parsed["stats"]["cost_tracking"] is True
+
+    def test_json_export_cost_tracking_false_for_custom(
+        self, tmp_path, binary_info, stats, token_usage, sample_results,
+    ):
+        data = _make_data(binary_info, stats, token_usage, sample_results)
+        data.provider = LLMProvider.CUSTOM
+        parsed = _export_and_load(data, tmp_path)
+        assert parsed["stats"]["cost_tracking"] is False

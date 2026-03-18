@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kong.config import LLMProvider
 from kong.ghidra.types import BinaryInfo
 from kong.llm.usage import TokenUsage
 
@@ -37,6 +38,7 @@ class ExportData:
     decompilations: dict[int, str]
     token_usage: TokenUsage
     duration_seconds: float
+    provider: LLMProvider | None = None
 
 
 def _format_header(data: ExportData) -> str:

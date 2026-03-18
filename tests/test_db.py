@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from kong.config import LLMProvider
 from kong.db import (
+    get_custom_config,
     get_default_provider,
     get_enabled_providers,
     is_setup_complete,
@@ -86,3 +87,52 @@ class TestSetupHelpers:
         )
         assert get_default_provider() is LLMProvider.OPENAI
         assert get_enabled_providers() == [LLMProvider.OPENAI]
+
+
+class TestCustomConfig:
+    def test_save_with_custom_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        save_setup(
+            enabled=[LLMProvider.CUSTOM],
+            default=LLMProvider.CUSTOM,
+            custom_config={
+                "custom_base_url": "http://localhost:11434/v1",
+                "custom_model": "llama3:8b",
+                "custom_api_key": "",
+                "custom_max_prompt_chars": "32000",
+                "custom_max_chunk_functions": "20",
+                "custom_max_output_tokens": "4096",
+            },
+        )
+        assert get_default_provider() == LLMProvider.CUSTOM
+        assert LLMProvider.CUSTOM in get_enabled_providers()
+
+    def test_get_custom_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        save_setup(
+            enabled=[LLMProvider.CUSTOM],
+            default=LLMProvider.CUSTOM,
+            custom_config={
+                "custom_base_url": "http://localhost:8000/v1",
+                "custom_model": "mistral",
+                "custom_api_key": "sk-test",
+                "custom_max_prompt_chars": "50000",
+                "custom_max_chunk_functions": "30",
+                "custom_max_output_tokens": "8192",
+            },
+        )
+        cfg = get_custom_config()
+        assert cfg["custom_base_url"] == "http://localhost:8000/v1"
+        assert cfg["custom_model"] == "mistral"
+        assert cfg["custom_api_key"] == "sk-test"
+        assert cfg["custom_max_prompt_chars"] == "50000"
+
+    def test_save_without_custom_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        save_setup(
+            enabled=[LLMProvider.ANTHROPIC],
+            default=LLMProvider.ANTHROPIC,
+        )
+        assert get_default_provider() == LLMProvider.ANTHROPIC
+        cfg = get_custom_config()
+        assert cfg == {}

@@ -18,12 +18,12 @@ from kong.agent.queue import WorkItem, WorkQueue
 from kong.agent.signatures import SignatureDB
 from kong.agent.triage import TriageAgent, TriageResult
 from kong.agent.type_recovery import StructAccumulator, apply_unified_structs
-from kong.config import KongConfig
+from kong.config import KongConfig, LLMProvider
 from kong.export.source import ExportData, export_source
 from kong.export.structured import export_json
 from kong.ghidra.client import GhidraClient
 from kong.ghidra.types import BinaryInfo, FunctionInfo, StringEntry
-from kong.llm.limits import get_model_limits
+from kong.llm.limits import ModelLimits, get_model_limits
 from kong.llm.usage import TokenUsage
 from kong.normalizer.syntactic import normalize
 from kong.synthesis.semantic import SemanticSynthesizer, SynthesisResult
@@ -295,6 +295,17 @@ class Supervisor:
             ),
         ))
 
+    def _get_effective_limits(self) -> ModelLimits:
+        cfg = self.config.llm
+        base = get_model_limits(getattr(self.llm_client, "model", "") or "")
+        if cfg.provider is not LLMProvider.CUSTOM:
+            return base
+        return ModelLimits(
+            max_prompt_chars=cfg.max_prompt_chars if cfg.max_prompt_chars is not None else base.max_prompt_chars,
+            max_chunk_functions=cfg.max_chunk_functions if cfg.max_chunk_functions is not None else base.max_chunk_functions,
+            max_output_tokens=cfg.max_output_tokens if cfg.max_output_tokens is not None else base.max_output_tokens,
+        )
+
     def _split_into_chunks(
         self,
         items: list[tuple[WorkItem, str]],
@@ -302,8 +313,7 @@ class Supervisor:
         """Split items into chunks by building the actual prompt and measuring size."""
         assert self.binary_info is not None
 
-        model_name = getattr(self.llm_client, "model", "") or ""
-        limits = get_model_limits(model_name)
+        limits = self._get_effective_limits()
 
         overhead = self._build_chunk_prompt([])
         overhead_len = len(overhead)
@@ -756,6 +766,7 @@ class Supervisor:
             decompilations=decompilations,
             token_usage=token_usage,
             duration_seconds=self.stats.duration_seconds,
+            provider=self.config.llm.provider,
         )
 
         formats = self.config.output.formats

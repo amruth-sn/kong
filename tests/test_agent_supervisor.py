@@ -8,7 +8,7 @@ from kong.agent.analyzer import LLMResponse
 from kong.agent.events import EventType, Phase
 from kong.agent.models import AnalysisStats, FunctionResult
 from kong.agent.supervisor import Supervisor
-from kong.config import KongConfig, OutputConfig
+from kong.config import KongConfig, LLMConfig, LLMProvider, OutputConfig
 from kong.ghidra.types import BinaryInfo, FunctionClassification, FunctionInfo
 
 
@@ -474,3 +474,50 @@ class TestChunkedPipelineIntegration:
         sup.run()
 
         assert mock_llm.analyze_function_batch.call_count == 1
+
+
+class TestGetEffectiveLimits:
+    def test_non_custom_returns_base_limits(self, tmp_path):
+        from kong.llm.limits import _DEFAULT_LIMITS
+
+        config = KongConfig(
+            llm=LLMConfig(provider=LLMProvider.ANTHROPIC),
+            output=OutputConfig(directory=tmp_path / "out"),
+        )
+        sup = Supervisor(_make_client(), config)
+        limits = sup._get_effective_limits()
+        assert limits == _DEFAULT_LIMITS
+
+    def test_custom_with_overrides(self, tmp_path):
+        config = KongConfig(
+            llm=LLMConfig(
+                provider=LLMProvider.CUSTOM,
+                model="llama3:8b",
+                max_prompt_chars=32000,
+                max_chunk_functions=20,
+                max_output_tokens=4096,
+            ),
+            output=OutputConfig(directory=tmp_path / "out"),
+        )
+        sup = Supervisor(_make_client(), config)
+        limits = sup._get_effective_limits()
+        assert limits.max_prompt_chars == 32000
+        assert limits.max_chunk_functions == 20
+        assert limits.max_output_tokens == 4096
+
+    def test_custom_partial_overrides_fall_back(self, tmp_path):
+        from kong.llm.limits import _DEFAULT_LIMITS
+
+        config = KongConfig(
+            llm=LLMConfig(
+                provider=LLMProvider.CUSTOM,
+                model="llama3:8b",
+                max_prompt_chars=32000,
+            ),
+            output=OutputConfig(directory=tmp_path / "out"),
+        )
+        sup = Supervisor(_make_client(), config)
+        limits = sup._get_effective_limits()
+        assert limits.max_prompt_chars == 32000
+        assert limits.max_chunk_functions == _DEFAULT_LIMITS.max_chunk_functions
+        assert limits.max_output_tokens == _DEFAULT_LIMITS.max_output_tokens

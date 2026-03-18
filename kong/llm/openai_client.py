@@ -55,10 +55,11 @@ class OpenAIClient:
         model: str = DEFAULT_MODEL,
         max_tokens: int = 2048,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         self.model = model
         self.max_tokens = max_tokens
-        self._client = openai.OpenAI(api_key=api_key, max_retries=5)
+        self._client = openai.OpenAI(api_key=api_key, base_url=base_url, max_retries=5)
         self.usage = TokenUsage()
 
     def analyze_function(self, prompt: str, *, model: str | None = None) -> LLMResponse:

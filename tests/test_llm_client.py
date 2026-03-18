@@ -235,3 +235,76 @@ class TestAnalyzeFunctionBatch:
         assert client.usage.input_tokens == 500
         assert client.usage.output_tokens == 200
         assert client.usage.calls == 1
+
+
+class TestOpenAIClientBaseUrl:
+    @patch("kong.llm.openai_client.openai.OpenAI")
+    def test_base_url_passed_to_sdk(self, mock_openai_cls):
+        from kong.llm.openai_client import OpenAIClient
+
+        OpenAIClient(
+            model="llama3:8b",
+            base_url="http://localhost:11434/v1",
+            api_key="test",
+        )
+        mock_openai_cls.assert_called_once_with(
+            api_key="test",
+            base_url="http://localhost:11434/v1",
+            max_retries=5,
+        )
+
+    @patch("kong.llm.openai_client.openai.OpenAI")
+    def test_base_url_none_by_default(self, mock_openai_cls):
+        from kong.llm.openai_client import OpenAIClient
+
+        OpenAIClient(model="gpt-4o", api_key="sk-test")
+        mock_openai_cls.assert_called_once_with(
+            api_key="sk-test",
+            base_url=None,
+            max_retries=5,
+        )
+
+
+class TestProviderAwarePricing:
+    def test_custom_provider_returns_zero_pricing(self):
+        from kong.config import LLMProvider
+        from kong.llm.usage import get_pricing
+
+        tier = get_pricing("any-model", provider=LLMProvider.CUSTOM)
+        assert tier.input_rate == 0.0
+        assert tier.output_rate == 0.0
+
+    def test_known_model_unaffected(self):
+        from kong.llm.usage import PRICING_REGISTRY, get_pricing
+
+        tier = get_pricing("gpt-4o")
+        assert tier == PRICING_REGISTRY["gpt-4o"]
+
+    def test_unknown_first_party_model_uses_default(self):
+        from kong.config import LLMProvider
+        from kong.llm.usage import get_pricing
+
+        tier = get_pricing("claude-future-model", provider=LLMProvider.ANTHROPIC)
+        assert tier.input_rate == 3.0
+        assert tier.output_rate == 15.0
+
+    def test_register_custom_model_adds_zero_pricing(self):
+        from kong.llm.usage import PRICING_REGISTRY, get_pricing, register_custom_model
+
+        register_custom_model("my-local-llama")
+        try:
+            tier = get_pricing("my-local-llama")
+            assert tier.input_rate == 0.0
+            assert tier.output_rate == 0.0
+        finally:
+            PRICING_REGISTRY.pop("my-local-llama", None)
+
+    def test_cost_usd_zero_for_registered_custom_model(self):
+        from kong.llm.usage import PRICING_REGISTRY, ModelTokenUsage, register_custom_model
+
+        register_custom_model("test-custom-model")
+        try:
+            mu = ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+            assert mu.cost_usd("test-custom-model") == 0.0
+        finally:
+            PRICING_REGISTRY.pop("test-custom-model", None)
