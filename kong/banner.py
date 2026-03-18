@@ -107,6 +107,7 @@ def print_setup_needed(console: Console, provider: LLMProvider = LLMProvider.ANT
     console.print("Run [bold cyan]kong setup[/bold cyan] for guided configuration.")
     console.print()
     key_example = _KEY_EXAMPLES.get(provider, "your-key-here")
+    console.print("Or set it directly:")
     console.print(f"  [bold]export {env_var}={key_example}[/bold]")
 
 
