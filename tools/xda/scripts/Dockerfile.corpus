@@ -1,0 +1,34 @@
+# build: docker build --platform linux/arm64 -t xda-corpus -f scripts/Dockerfile.corpus .
+# run:   docker run --platform linux/arm64 -v $(pwd)/corpus:/out xda-corpus
+
+FROM --platform=linux/arm64 debian:bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Real-world C/C++ binaries
+    coreutils binutils findutils diffutils grep gawk sed \
+    tar gzip bzip2 xz-utils \
+    curl wget \
+    openssh-client openssh-server \
+    openssl \
+    sqlite3 \
+    nginx-core \
+    redis-server \
+    lua5.4 \
+    vim-tiny \
+    tmux \
+    git \
+    # Debug
+    && echo "deb http://deb.debian.org/debian-debug bookworm-debug main" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    coreutils-dbgsym binutils-dbgsym findutils-dbgsym \
+    tar-dbgsym grep-dbgsym gawk-dbgsym sed-dbgsym \
+    curl-dbgsym openssh-client-dbgsym \
+    libssl3-dbgsym libsqlite3-0-dbgsym \
+    redis-server-dbgsym lua5.4-dbgsym \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/fetch_debian_packages.sh /extract.sh
+RUN chmod +x /extract.sh
+
+CMD ["/extract.sh"]

@@ -224,3 +224,5 @@ internal-testing/
 .DS_Store
 
 docs/
+
+corpus/
