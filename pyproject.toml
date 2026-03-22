@@ -55,3 +55,8 @@ packages = ["kong"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.workspace]
+members = [
+    "tools/xda",
+]
