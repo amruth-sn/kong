@@ -9,17 +9,25 @@ set -euo pipefail
 ARCH="${1:?Usage: build_corpus.sh <arch> <output_dir>}"
 OUT="${2:?Usage: build_corpus.sh <arch> <output_dir>}"
 
+ZIG_TARGET=""
 case "$ARCH" in
-    x86_64)  CC="gcc"; STRIP="strip" ;;
-    aarch64) CC="aarch64-linux-gnu-gcc"; STRIP="aarch64-linux-gnu-strip" ;;
-    arm)     CC="arm-linux-gnueabihf-gcc"; STRIP="arm-linux-gnueabihf-strip" ;;
-    mips)    CC="mips-linux-gnu-gcc"; STRIP="mips-linux-gnu-strip" ;;
-    riscv64) CC="riscv64-linux-gnu-gcc"; STRIP="riscv64-linux-gnu-strip" ;;
+    x86_64)  CC="x86_64-linux-gnu-gcc"; STRIP="x86_64-linux-gnu-strip"; ZIG_TARGET="x86_64-linux-gnu" ;;
+    aarch64) CC="aarch64-linux-gnu-gcc"; STRIP="aarch64-linux-gnu-strip"; ZIG_TARGET="aarch64-linux-gnu" ;;
+    arm)     CC="arm-linux-gnueabihf-gcc"; STRIP="arm-linux-gnueabihf-strip"; ZIG_TARGET="arm-linux-gnueabihf" ;;
+    mips)    CC="mips-linux-gnu-gcc"; STRIP="mips-linux-gnu-strip"; ZIG_TARGET="mips-linux-gnu" ;;
+    riscv64) CC="riscv64-linux-gnu-gcc"; STRIP="riscv64-linux-gnu-strip"; ZIG_TARGET="riscv64-linux-gnu" ;;
     *)       echo "Unknown arch: $ARCH"; exit 1 ;;
 esac
 
-# Verify compiler exists
-command -v "$CC" >/dev/null 2>&1 || { echo "$CC not found. Install cross-compiler."; exit 1; }
+USE_ZIG=0
+if command -v "$CC" >/dev/null 2>&1; then
+    : # native cross-compiler found
+elif command -v zig >/dev/null 2>&1 && [ -n "$ZIG_TARGET" ]; then
+    USE_ZIG=1
+    echo "Using zig cc -target $ZIG_TARGET (native $CC not found)"
+else
+    echo "$CC not found and zig not available. Install a cross-compiler or zig."; exit 1
+fi
 
 mkdir -p "$OUT"
 
@@ -85,9 +93,15 @@ for src in "$SOURCES_DIR"/*.c; do
         out_debug="${OUT}/${name}_${opt}_debug"
         out_stripped="${OUT}/${name}_${opt}_stripped"
 
-        "$CC" -g "-${opt}" -o "$out_debug" "$src" 2>/dev/null || continue
-        cp "$out_debug" "$out_stripped"
-        "$STRIP" "$out_stripped"
+        if [ "$USE_ZIG" -eq 1 ]; then
+            zig cc -target "$ZIG_TARGET" -g "-${opt}" -o "$out_debug" "$src" 2>/dev/null || continue
+            cp "$out_debug" "$out_stripped"
+            zig cc -target "$ZIG_TARGET" -s -o "$out_stripped" "$src" 2>/dev/null || continue
+        else
+            "$CC" -g "-${opt}" -o "$out_debug" "$src" 2>/dev/null || continue
+            cp "$out_debug" "$out_stripped"
+            "$STRIP" "$out_stripped"
+        fi
 
         echo "Built: ${name}_${opt}"
     done

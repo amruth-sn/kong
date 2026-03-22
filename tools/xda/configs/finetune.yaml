@@ -1,0 +1,23 @@
+model:
+  hidden_size: 768
+  num_hidden_layers: 12
+  num_attention_heads: 12
+  intermediate_size: 3072
+
+training:
+  epochs: 5
+  batch_size: 64
+  learning_rate: 2.0e-5
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  fp16: true
+
+data:
+  window_size: 512
+  stride: 256
+
+output:
+  checkpoint_dir: checkpoints/finetune
+  save_best: true
+
+pretrained_checkpoint: null
