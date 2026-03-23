@@ -5,7 +5,7 @@ model:
   intermediate_size: 3072
 
 training:
-  epochs: 5
+  epochs: 15
   batch_size: 64
   learning_rate: 2.0e-5
   warmup_ratio: 0.1

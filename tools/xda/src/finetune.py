@@ -66,6 +66,19 @@ def finetune(config_path: str, data_path: str, arch: str = "unknown") -> None:
     val_chunks = json.loads(Path(data_path, "val.json").read_text())
     print(f"Train: {len(train_chunks)} chunks, Val: {len(val_chunks)} chunks")
 
+    label_counts = [0, 0, 0]
+    for chunk in train_chunks:
+        for label in chunk["labels"]:
+            if 0 <= label <= 2:
+                label_counts[label] += 1
+    total = sum(label_counts)
+    class_weights = torch.tensor(
+        [total / (3 * c) if c > 0 else 1.0 for c in label_counts],
+        dtype=torch.float32,
+    ).to(device)
+    print(f"Label counts: non_func={label_counts[0]}, func_start={label_counts[1]}, func_body={label_counts[2]}")
+    print(f"Class weights: {class_weights.tolist()}")
+
     tokenizer = ByteTokenizer()
     train_ds = ByteDataset(train_chunks, tokenizer)
     val_ds = ByteDataset(val_chunks, tokenizer)
@@ -110,7 +123,7 @@ def finetune(config_path: str, data_path: str, arch: str = "unknown") -> None:
         optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_steps,
     )
 
-    loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-100)
     scaler = torch.amp.GradScaler(enabled=cfg["training"]["fp16"] and use_cuda)
 
     checkpoint_dir = Path(cfg["output"]["checkpoint_dir"])

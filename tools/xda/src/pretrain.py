@@ -65,6 +65,7 @@ def pretrain(config_path: str, data_path: str) -> None:
         else "mps" if torch.backends.mps.is_available()
         else "cpu"
     )
+    use_cuda = device.type == "cuda"
     print(f"Using device: {device}")
 
     train_chunks = json.loads(Path(data_path, "train.json").read_text())
@@ -81,8 +82,8 @@ def pretrain(config_path: str, data_path: str) -> None:
         dataset,
         batch_size=cfg["training"]["batch_size"],
         shuffle=True,
-        num_workers=4,
-        pin_memory=True,
+        num_workers=4 if use_cuda else 0,
+        pin_memory=use_cuda,
     )
 
     model_cfg = XdaConfig(
