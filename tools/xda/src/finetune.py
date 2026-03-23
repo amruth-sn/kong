@@ -72,12 +72,13 @@ def finetune(config_path: str, data_path: str, arch: str = "unknown") -> None:
             if 0 <= label <= 2:
                 label_counts[label] += 1
     total = sum(label_counts)
+    raw_weights = [total / (3 * c) if c > 0 else 1.0 for c in label_counts]
     class_weights = torch.tensor(
-        [total / (3 * c) if c > 0 else 1.0 for c in label_counts],
+        [w ** 0.5 for w in raw_weights],
         dtype=torch.float32,
     ).to(device)
     print(f"Label counts: non_func={label_counts[0]}, func_start={label_counts[1]}, func_body={label_counts[2]}")
-    print(f"Class weights: {class_weights.tolist()}")
+    print(f"Class weights (sqrt-dampened): {class_weights.tolist()}")
 
     tokenizer = ByteTokenizer()
     train_ds = ByteDataset(train_chunks, tokenizer)
