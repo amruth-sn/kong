@@ -185,6 +185,9 @@ def finetune(config_path: str, data_path: str, arch: str = "unknown") -> None:
             torch.save(model.state_dict(), checkpoint_dir / "best.pt")
             print(f"  New best function_start F1: {fs_f1:.4f}")
 
+        prev = checkpoint_dir / f"epoch{epoch}.pt"
+        if prev.exists():
+            prev.unlink()
         torch.save(model.state_dict(), checkpoint_dir / f"epoch{epoch + 1}.pt")
 
     config_out = {
