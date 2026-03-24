@@ -50,7 +50,7 @@ def evaluate(model: XdaModel, loader: DataLoader, device: torch.device) -> dict:
     return results
 
 
-def finetune(config_path: str, data_path: str, arch: str = "unknown") -> None:
+def finetune(config_path: str, data_path: str, arch: str = "unknown", resume_from: str | None = None) -> None:
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
 
@@ -103,13 +103,19 @@ def finetune(config_path: str, data_path: str, arch: str = "unknown") -> None:
     )
     model = XdaModel(model_cfg)
 
-    pretrained_path = cfg.get("pretrained_checkpoint")
-    if pretrained_path and Path(pretrained_path).exists():
-        print(f"Loading pre-trained weights from {pretrained_path}")
-        state = torch.load(pretrained_path, map_location="cpu", weights_only=True)
-        encoder_state = {k: v for k, v in state.items() if k.startswith("encoder.")}
-        model.load_state_dict(encoder_state, strict=False)
-        print(f"Loaded {len(encoder_state)} encoder weight tensors")
+    if resume_from and Path(resume_from).exists():
+        print(f"Resuming from checkpoint: {resume_from}")
+        state = torch.load(resume_from, map_location="cpu", weights_only=True)
+        model.load_state_dict(state)
+        print(f"Loaded full model state ({len(state)} tensors)")
+    else:
+        pretrained_path = cfg.get("pretrained_checkpoint")
+        if pretrained_path and Path(pretrained_path).exists():
+            print(f"Loading pre-trained weights from {pretrained_path}")
+            state = torch.load(pretrained_path, map_location="cpu", weights_only=True)
+            encoder_state = {k: v for k, v in state.items() if k.startswith("encoder.")}
+            model.load_state_dict(encoder_state, strict=False)
+            print(f"Loaded {len(encoder_state)} encoder weight tensors")
 
     model = model.to(device)
 
@@ -211,5 +217,6 @@ if __name__ == "__main__":
     parser.add_argument("--config", required=True)
     parser.add_argument("--data", required=True)
     parser.add_argument("--arch", default="unknown")
+    parser.add_argument("--resume", default=None, help="Resume from a full finetune checkpoint")
     args = parser.parse_args()
-    finetune(args.config, args.data, args.arch)
+    finetune(args.config, args.data, args.arch, args.resume)
