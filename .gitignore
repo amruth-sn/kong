@@ -228,3 +228,7 @@ docs/
 corpus/
 
 tools/xda/data/
+
+# Added by cargo
+
+/target
