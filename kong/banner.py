@@ -11,6 +11,8 @@ from rich.text import Text
 
 from kong import __version__
 from kong.config import LLMProvider
+from kong.llm.codex_auth import resolve_codex_credential
+from kong.llm.openai_auth import resolve_openai_credential
 
 KONG_ASCII = r"""
  ██╗  ██╗ ██████╗ ███╗   ██╗ ██████╗
@@ -86,6 +88,11 @@ def _load_dotenv(provider: LLMProvider) -> None:
 
 
 def check_api_key(provider: LLMProvider) -> bool:
+    if provider is LLMProvider.CODEX:
+        return resolve_codex_credential() is not None
+    if provider is LLMProvider.OPENAI:
+        _load_dotenv(provider)
+        return resolve_openai_credential() is not None
     env_var = _env_var_for(provider)
     if env_var is None:
         return True
@@ -95,6 +102,11 @@ def check_api_key(provider: LLMProvider) -> bool:
 
 def print_setup_needed(console: Console, provider: LLMProvider = LLMProvider.ANTHROPIC) -> None:
     env_var = _env_var_for(provider)
+    if provider is LLMProvider.CODEX:
+        console.print()
+        console.print("[bold red]Codex OAuth is not configured.[/bold red]")
+        console.print("Run [bold cyan]codex[/bold cyan] to sign in with ChatGPT, then rerun [bold cyan]kong setup[/bold cyan].")
+        return
     if env_var is None:
         console.print()
         console.print("[bold red]Custom provider not configured.[/bold red]")
@@ -103,12 +115,20 @@ def print_setup_needed(console: Console, provider: LLMProvider = LLMProvider.ANT
     console.print()
     console.print(f"[bold red]{env_var} is not set.[/bold red]")
     console.print()
-    console.print(f"Kong requires a {provider.display_name} API key to analyze binaries.")
+    if provider is LLMProvider.OPENAI:
+        console.print("Kong requires OpenAI credentials to analyze binaries.")
+        console.print("You can use either OPENAI_API_KEY or a local Codex OAuth login.")
+    else:
+        console.print(f"Kong requires a {provider.display_name} API key to analyze binaries.")
     console.print("Run [bold cyan]kong setup[/bold cyan] for guided configuration.")
     console.print()
     key_example = _KEY_EXAMPLES.get(provider, "your-key-here")
     console.print("Or set it directly:")
     console.print(f"  [bold]export {env_var}={key_example}[/bold]")
+    if provider is LLMProvider.OPENAI:
+        console.print()
+        console.print("Or sign in with Codex:")
+        console.print("  [bold]codex[/bold]")
 
 
 def print_analyze_header(

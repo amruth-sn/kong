@@ -23,7 +23,11 @@ def _build_binary_section(data: ExportData) -> dict[str, str | int]:
 
 def _build_stats_section(data: ExportData) -> dict[str, int | float | bool]:
     s = data.stats
-    cost_tracking = data.provider is not LLMProvider.CUSTOM if data.provider else True
+    cost_tracking = (
+        data.provider not in (LLMProvider.CUSTOM, LLMProvider.CODEX)
+        if data.provider
+        else True
+    )
     return {
         "total_functions": s.total_functions,
         "analyzed": s.analyzed,

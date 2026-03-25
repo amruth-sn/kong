@@ -133,14 +133,36 @@ class TestCreateLLMClient:
         )
 
     @patch("kong.llm.openai_client.openai.OpenAI")
-    def test_openai_returns_openai_client_no_base_url(self, mock_openai_cls):
+    def test_openai_returns_openai_client_no_base_url(self, mock_openai_cls, tmp_path, monkeypatch):
         from kong.llm.openai_client import OpenAIClient
 
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path))
         config = LLMConfig(provider=LLMProvider.OPENAI, model="gpt-4o")
         client = create_llm_client(config)
         assert isinstance(client, OpenAIClient)
         mock_openai_cls.assert_called_once_with(
             api_key=None,
+            base_url=None,
+            max_retries=5,
+        )
+
+    @patch("kong.llm.openai_client.openai.OpenAI")
+    def test_openai_uses_codex_oauth_when_api_key_missing(self, mock_openai_cls, tmp_path, monkeypatch):
+        from kong.llm.openai_client import OpenAIClient
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+        auth_path = tmp_path / "auth.json"
+        auth_path.write_text(
+            '{"OPENAI_API_KEY": null, "tokens": {"access_token": "oauth-token"}}'
+        )
+
+        config = LLMConfig(provider=LLMProvider.OPENAI, model="gpt-4o")
+        client = create_llm_client(config)
+        assert isinstance(client, OpenAIClient)
+        mock_openai_cls.assert_called_once_with(
+            api_key="oauth-token",
             base_url=None,
             max_retries=5,
         )
@@ -152,6 +174,15 @@ class TestCreateLLMClient:
         config = LLMConfig(provider=LLMProvider.ANTHROPIC, model="claude-opus-4-6")
         client = create_llm_client(config)
         assert isinstance(client, AnthropicClient)
+
+    @patch("kong.__main__.CodexClient")
+    def test_codex_returns_codex_client(self, mock_codex_cls):
+        config = LLMConfig(provider=LLMProvider.CODEX, model="gpt-5-codex", max_output_tokens=2048)
+        create_llm_client(config)
+        mock_codex_cls.assert_called_once_with(
+            model="gpt-5-codex",
+            max_output_tokens=2048,
+        )
 
 
 class TestResolveProviderCustom:
@@ -174,6 +205,17 @@ class TestResolveProviderCustom:
         )
         provider = resolve_provider()
         assert provider is LLMProvider.ANTHROPIC
+
+    def test_codex_can_be_selected_explicitly(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        codex_home = tmp_path / "codex-home"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text(
+            '{"tokens":{"access_token":"oauth-token","refresh_token":"refresh-token","account_id":"acct_123"}}'
+        )
+        provider = resolve_provider(cli_override="codex")
+        assert provider is LLMProvider.CODEX
 
 
 class TestValidateBaseUrl:
@@ -201,7 +243,7 @@ class TestSetupWizardCustom:
         result = runner.invoke(
             cli,
             ["setup"],
-            input="3\nhttp://localhost:11434/v1\nllama3:8b\n\n32000\n20\n4096\n",
+            input="4\nhttp://localhost:11434/v1\nllama3:8b\n\n32000\n20\n4096\n",
         )
         assert result.exit_code == 0
         from kong.db import get_default_provider
@@ -212,12 +254,12 @@ class TestSetupWizardCustom:
         assert cfg["custom_model"] == "llama3:8b"
         assert cfg["custom_max_prompt_chars"] == "32000"
 
-    def test_setup_option_4_is_anthropic_plus_openai(self, tmp_path, monkeypatch):
+    def test_setup_option_5_is_anthropic_plus_openai(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test1234")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test1234")
         runner = CliRunner()
-        result = runner.invoke(cli, ["setup"], input="4\n1\n")
+        result = runner.invoke(cli, ["setup"], input="5\n1\n")
         assert result.exit_code == 0
         from kong.db import get_enabled_providers
 
@@ -225,6 +267,21 @@ class TestSetupWizardCustom:
         assert LLMProvider.ANTHROPIC in enabled
         assert LLMProvider.OPENAI in enabled
         assert LLMProvider.CUSTOM not in enabled
+
+    def test_setup_option_3_is_codex(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        codex_home = tmp_path / "codex-home"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text(
+            '{"tokens":{"access_token":"oauth-token","refresh_token":"refresh-token","account_id":"acct_123"}}'
+        )
+        runner = CliRunner()
+        result = runner.invoke(cli, ["setup"], input="3\n")
+        assert result.exit_code == 0
+        from kong.db import get_default_provider
+
+        assert get_default_provider() is LLMProvider.CODEX
 
 
 class TestCustomProviderIntegration:

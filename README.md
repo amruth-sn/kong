@@ -43,8 +43,8 @@ Kong solves this by building rich context windows from Ghidra's program analysis
 - **Syntactic Normalization**: Decompiler output is cleaned up (modulo recovery, negative literal reconstruction, dead assignment removal) before reaching the LLM, reducing noise and token waste. 
 - **Agentic Deobfuscation**: Kong uses an agentic deobfuscation pipeline which can identify and remove obfuscation techniques (Control flow flattening, bogus control flow, instruction substitution, string encryption, VM protection, etc.) from the decompiler output.
 - **Eval Framework**: Built-in evaluation harness that scores analysis output against ground-truth source code, measuring symbol accuracy (word-based Jaccard) and type accuracy (signature component scoring).
-- **Multi-Provider LLM Support**: Works with Anthropic (Claude) and OpenAI (GPT-4o) out of the box. An interactive setup wizard configures providers and smart routing auto-selects whichever has a valid key.
-- **Cost-Tracking**: Tracks token usage and costs per model across providers, with provider-aware pricing.
+- **Multi-Provider LLM Support**: Works with Anthropic (Claude), OpenAI (GPT-4o), Codex (ChatGPT OAuth), and custom OpenAI-compatible endpoints. The setup wizard configures providers and smart routing auto-selects whichever has valid credentials.
+- **Cost-Tracking**: Tracks token usage and costs per model where API pricing exists, with token-only accounting for Codex and custom endpoints.
 
 ## Supported Architectures
 
@@ -129,7 +129,7 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 
 - **Runtime**: Python 3.11+, managed with [uv](https://github.com/astral-sh/uv)
 - **Binary analysis**: [Ghidra](https://ghidra-sre.org/) via [PyGhidra](https://github.com/NationalSecurityAgency/ghidra/tree/master/Ghidra/Features/PyGhidra) (in-process, JPype)
-- **LLM**: [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) (Claude) and [OpenAI SDK](https://github.com/openai/openai-python) (GPT-4o)
+- **LLM**: [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) (Claude), [OpenAI SDK](https://github.com/openai/openai-python) (GPT-4o), and the ChatGPT Codex backend for OAuth-backed Codex analysis
 - **Symbolic analysis**: [z3-solver](https://github.com/Z3Prover/z3)
 - **CLI**: [Click](https://click.palletsprojects.com/)
 - **TUI**: [Textual](https://textual.textualize.io/)
@@ -145,9 +145,11 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 - **uv** — Python package manager ([Install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Ghidra** — The National Security Agency's reverse engineering framework ([Install Ghidra](https://ghidra-sre.org/InstallationGuide.html))
 - **JDK 21+** — Required by Ghidra ([Adoptium](https://adoptium.net/))
-- **LLM API key** — At least one of:
+- **LLM credentials** — At least one of:
   - [Anthropic](https://console.anthropic.com/settings/keys) (Claude)
-  - [OpenAI](https://platform.openai.com/api-keys) (GPT-4o)
+  - [OpenAI API key](https://platform.openai.com/api-keys) (GPT-4o)
+  - A local Codex login (`codex`, then "Sign in with ChatGPT") for the `codex` provider
+  - A custom OpenAI-compatible endpoint
 
 ### Quick Start
 
@@ -155,10 +157,13 @@ Kong uses a five-phase pipeline orchestrated by a supervisor that coordinates tr
 # 1. Install Kong
 uv pip install kong-re
 
-# 2. Set your API key(s)
+# 2. Set your credentials
 export ANTHROPIC_API_KEY="sk-ant-..."
 # and/or
 export OPENAI_API_KEY="sk-..."
+
+# or sign in with Codex for the Codex provider
+codex
 
 # 3. Run the setup wizard (first time only)
 kong setup
@@ -167,7 +172,9 @@ kong setup
 kong analyze ./path/to/stripped_binary
 ```
 
-The setup wizard lets you pick which LLM providers to use and sets a default. Kong auto-detects your Ghidra and JDK installations, loads the binary into an in-process Ghidra instance, and runs the full pipeline.
+The setup wizard lets you pick which LLM providers to use and sets a default. The `codex` provider uses your local ChatGPT/Codex login from `~/.codex/auth.json` and talks directly to the ChatGPT Codex backend. The `openai` provider still uses the normal OpenAI API and can optionally reuse a local Codex login as its credential source. Kong auto-detects your Ghidra and JDK installations, loads the binary into an in-process Ghidra instance, and runs the full pipeline.
+
+Note: Codex/ChatGPT access and OpenAI API billing are managed separately. If Kong detects Codex OAuth but OpenAI requests still fail, enable API billing for your OpenAI project or provide `OPENAI_API_KEY`.
 
 #### From source
 
@@ -184,7 +191,8 @@ uv run kong analyze ./path/to/stripped_binary
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | At least one | Anthropic API key (Claude) |
-| `OPENAI_API_KEY` | At least one | OpenAI API key (GPT-4o) |
+| `OPENAI_API_KEY` | No | OpenAI API key (GPT-4o). Optional if Kong can reuse a local Codex login. |
+| `CODEX_HOME` | No | Override the Codex config directory used to locate `auth.json`. |
 | `GHIDRA_INSTALL_DIR` | No | Path to Ghidra installation (auto-detected if not set) |
 | `JAVA_HOME` | No | Path to JDK (auto-detected if not set) |
 | `KONG_CONFIG_DIR` | No | Override config directory (default: `~/.config/kong`) |
@@ -200,9 +208,11 @@ kong analyze ./binary
 
 # Analyze with a specific provider
 kong analyze ./binary --provider openai
+kong analyze ./binary --provider codex
 
 # Override the model
 kong analyze ./binary --provider openai --model gpt-4o-mini
+kong analyze ./binary --provider codex --model gpt-5-codex
 
 # Show binary metadata without running analysis
 kong info ./binary

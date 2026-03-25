@@ -7,12 +7,16 @@ class TestLLMProviderCustom:
     def test_custom_variant_exists(self):
         assert LLMProvider.CUSTOM.value == "custom"
 
+    def test_codex_variant_exists(self):
+        assert LLMProvider.CODEX.value == "codex"
+
     def test_custom_display_name(self):
         assert LLMProvider.CUSTOM.display_name == "Custom"
 
     def test_existing_display_names_unchanged(self):
         assert LLMProvider.ANTHROPIC.display_name == "Anthropic"
         assert LLMProvider.OPENAI.display_name == "OpenAI"
+        assert LLMProvider.CODEX.display_name == "Codex"
 
 
 class TestLLMConfigCustomFields:

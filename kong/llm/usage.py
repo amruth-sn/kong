@@ -42,7 +42,7 @@ _ZERO_PRICING = PricingTier(0.0, 0.0, 0.0, 0.0)
 
 
 def get_pricing(model: str, provider: LLMProvider | None = None) -> PricingTier:
-    if provider is LLMProvider.CUSTOM:
+    if provider in (LLMProvider.CUSTOM, LLMProvider.CODEX):
         return _ZERO_PRICING
     return PRICING_REGISTRY.get(model, _DEFAULT_PRICING)
 

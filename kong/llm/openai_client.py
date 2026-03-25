@@ -15,6 +15,7 @@ import openai
 
 from kong.agent.analyzer import Analyzer, LLMResponse
 from kong.agent.prompts import BATCH_OUTPUT_SCHEMA, BATCH_SYSTEM_PROMPT, OUTPUT_SCHEMA, SYSTEM_PROMPT
+from kong.llm.openai_auth import resolve_openai_credential
 from kong.llm.tools import ToolExecutor
 from kong.llm.usage import TokenUsage
 
@@ -59,13 +60,33 @@ class OpenAIClient:
     ) -> None:
         self.model = model
         self.max_tokens = max_tokens
-        self._client = openai.OpenAI(api_key=api_key, base_url=base_url, max_retries=5)
+        self._explicit_api_key = api_key
+        self._base_url = base_url
+        self._resolved_api_key: str | None = None
+        self._client = self._make_client()
         self.usage = TokenUsage()
+
+    def _resolve_api_key(self) -> str | None:
+        if self._explicit_api_key is not None:
+            return self._explicit_api_key
+        credential = resolve_openai_credential()
+        return credential.token if credential else None
+
+    def _make_client(self) -> openai.OpenAI:
+        api_key = self._resolve_api_key()
+        self._resolved_api_key = api_key
+        return openai.OpenAI(api_key=api_key, base_url=self._base_url, max_retries=5)
+
+    def _get_client(self) -> openai.OpenAI:
+        api_key = self._resolve_api_key()
+        if api_key != self._resolved_api_key:
+            self._client = self._make_client()
+        return self._client
 
     def analyze_function(self, prompt: str, *, model: str | None = None) -> LLMResponse:
         """Send an analysis prompt and return parsed response (no tools)."""
         effective_model = model or self.model
-        response = self._client.chat.completions.create(
+        response = self._get_client().chat.completions.create(
             model=effective_model,
             max_tokens=self.max_tokens,
             response_format={"type": "json_object"},
@@ -87,7 +108,7 @@ class OpenAIClient:
     def analyze_function_batch(self, prompt: str, *, model: str | None = None) -> list[LLMResponse]:
         """Send a batch analysis prompt and return parsed list of responses."""
         effective_model = model or self.model
-        response = self._client.chat.completions.create(
+        response = self._get_client().chat.completions.create(
             model=effective_model,
             max_tokens=16384,
             messages=[
@@ -132,7 +153,7 @@ class OpenAIClient:
 
         last_text = ""
         for _ in range(max_rounds):
-            response = self._client.chat.completions.create(
+            response = self._get_client().chat.completions.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 tools=openai_tools,
