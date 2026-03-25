@@ -295,17 +295,12 @@ class CodexClient:
         while True:
             raw_line = response.readline()
             if not raw_line:
+                CodexClient._append_buffered_event(events, event_name, data_lines)
                 break
 
             line = raw_line.decode("utf-8", "replace").rstrip("\r\n")
             if not line:
-                if data_lines:
-                    data = "\n".join(data_lines)
-                    if data != "[DONE]":
-                        try:
-                            events.append((event_name, json.loads(data)))
-                        except json.JSONDecodeError:
-                            logger.debug("Skipping non-JSON SSE payload: %s", data[:200])
+                CodexClient._append_buffered_event(events, event_name, data_lines)
                 event_name = ""
                 data_lines = []
                 continue
@@ -316,6 +311,22 @@ class CodexClient:
                 data_lines.append(line.split(":", 1)[1].lstrip())
 
         return events
+
+    @staticmethod
+    def _append_buffered_event(
+        events: list[tuple[str, dict[str, Any]]],
+        event_name: str,
+        data_lines: list[str],
+    ) -> None:
+        if not data_lines:
+            return
+        data = "\n".join(data_lines)
+        if data == "[DONE]":
+            return
+        try:
+            events.append((event_name, json.loads(data)))
+        except json.JSONDecodeError:
+            logger.debug("Skipping non-JSON SSE payload: %s", data[:200])
 
     def _record_usage(self, model: str, input_tokens: int, output_tokens: int) -> None:
         usage = self.usage._get(model)

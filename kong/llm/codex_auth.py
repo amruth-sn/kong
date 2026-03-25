@@ -95,6 +95,7 @@ def refresh_codex_credential(credential: CodexCredential | None = None) -> Codex
     auth_path = current.auth_path or codex_auth_path()
     auth_path.parent.mkdir(parents=True, exist_ok=True)
     auth_path.write_text(json.dumps(updated, indent=2), encoding="utf-8")
+    _restrict_auth_file_permissions(auth_path)
 
     return CodexCredential(
         access_token=access_token,
@@ -165,3 +166,10 @@ def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
     if not isinstance(parsed, dict):
         return None
     return parsed
+
+
+def _restrict_auth_file_permissions(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass

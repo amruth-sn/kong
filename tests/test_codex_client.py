@@ -60,6 +60,21 @@ def test_analyze_function_parses_json(mock_urlopen, mock_resolve_credential):
 
 @patch("kong.llm.codex_client.resolve_codex_credential")
 @patch("kong.llm.codex_client.urllib.request.urlopen")
+def test_analyze_function_handles_eof_without_trailing_blank_line(mock_urlopen, mock_resolve_credential):
+    mock_resolve_credential.return_value = MagicMock(access_token="oauth", account_id="acct", refresh_token="refresh")
+    mock_urlopen.return_value = _FakeStreamingResponse(
+        "event: response.completed\n"
+        f"data: {json.dumps({'response': {'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': json.dumps({'name': 'eof_case'})}]}], 'usage': {'input_tokens': 3, 'output_tokens': 2}}})}\n"
+    )
+
+    client = CodexClient(model="gpt-5-codex")
+    response = client.analyze_function("analyze this function")
+
+    assert response.name == "eof_case"
+
+
+@patch("kong.llm.codex_client.resolve_codex_credential")
+@patch("kong.llm.codex_client.urllib.request.urlopen")
 def test_analyze_with_tools_executes_tool_calls(mock_urlopen, mock_resolve_credential):
     mock_resolve_credential.return_value = MagicMock(access_token="oauth", account_id="acct", refresh_token="refresh")
     mock_urlopen.side_effect = [

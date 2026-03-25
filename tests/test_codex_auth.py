@@ -26,8 +26,9 @@ def test_resolve_codex_credential_reads_auth_file(tmp_path, monkeypatch):
     assert credential.account_id == "acct_123"
 
 
+@patch("kong.llm.codex_auth.os.chmod")
 @patch("kong.llm.codex_auth.urllib.request.urlopen")
-def test_refresh_codex_credential_updates_auth_file(mock_urlopen, tmp_path, monkeypatch):
+def test_refresh_codex_credential_updates_auth_file(mock_urlopen, mock_chmod, tmp_path, monkeypatch):
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -51,6 +52,9 @@ def test_refresh_codex_credential_updates_auth_file(mock_urlopen, tmp_path, monk
 
     assert credential is not None
     assert credential.access_token == "new-access"
+    assert credential.refresh_token == "new-refresh"
+    assert credential.account_id == "acct_123"
+    mock_chmod.assert_called_once_with(auth_path, 0o600)
     saved = json.loads(auth_path.read_text(encoding="utf-8"))
     assert saved["tokens"]["access_token"] == "new-access"
     assert saved["tokens"]["refresh_token"] == "new-refresh"

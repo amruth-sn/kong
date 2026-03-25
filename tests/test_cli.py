@@ -178,7 +178,8 @@ class TestCreateLLMClient:
     @patch("kong.__main__.CodexClient")
     def test_codex_returns_codex_client(self, mock_codex_cls):
         config = LLMConfig(provider=LLMProvider.CODEX, model="gpt-5-codex", max_output_tokens=2048)
-        create_llm_client(config)
+        client = create_llm_client(config)
+        assert client is mock_codex_cls.return_value
         mock_codex_cls.assert_called_once_with(
             model="gpt-5-codex",
             max_output_tokens=2048,
