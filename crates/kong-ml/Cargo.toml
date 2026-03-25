@@ -2,7 +2,13 @@
 name = "kong-ml"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 
 [dependencies]
+kong-types = { path = "../kong-types" }
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+safetensors = "0.4"
 serde.workspace = true
+serde_json.workspace = true
+dirs = "5"
