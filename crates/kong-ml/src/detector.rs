@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use candle_core::{Device, IndexOp, Result, Tensor};
 use kong_types::function::{AmbiguousRegion, DetectionSource, FunctionBoundary};
 
@@ -37,8 +39,12 @@ impl XdaDetector {
         }
     }
 
-    /// Predict function boundaries in ambiguous regions.
     pub fn predict(&self, regions: &[AmbiguousRegion]) -> Result<Vec<FunctionBoundary>> {
+        self.predict_timed(regions).map(|(boundaries, _)| boundaries)
+    }
+
+    pub fn predict_timed(&self, regions: &[AmbiguousRegion]) -> Result<(Vec<FunctionBoundary>, Duration)> {
+        let start = Instant::now();
         let mut boundaries = Vec::new();
 
         for region in regions {
@@ -46,7 +52,7 @@ impl XdaDetector {
             boundaries.extend(region_predictions);
         }
 
-        Ok(boundaries)
+        Ok((boundaries, start.elapsed()))
     }
 
     fn predict_region(&self, region: &AmbiguousRegion) -> Result<Vec<FunctionBoundary>> {
