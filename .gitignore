@@ -228,6 +228,9 @@ docs/
 corpus/
 
 tools/xda/data/
+tools/xda/models/
+tools/xda/checkpoints/
+tools/xda/corpus/
 
 # Added by cargo
 
