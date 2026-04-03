@@ -1,0 +1,35 @@
+# Build a Debian binary/debug corpus for any architecture.
+# build: docker build --platform linux/<platform> -t xda-corpus-<arch> -f scripts/Dockerfile.corpus .
+# run:   docker run --platform linux/<platform> -v $(pwd)/corpus/<arch>:/out xda-corpus-<arch>
+#
+# Platforms: linux/amd64, linux/arm64, linux/arm/v7, linux/mipsel
+
+FROM debian:bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    file binutils \
+    coreutils findutils diffutils grep gawk sed \
+    tar gzip bzip2 xz-utils \
+    curl wget \
+    openssh-client \
+    openssl \
+    sqlite3 \
+    lua5.4 \
+    vim-tiny \
+    tmux \
+    git \
+    && echo "deb http://deb.debian.org/debian-debug bookworm-debug main" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    coreutils-dbgsym findutils-dbgsym \
+    tar-dbgsym grep-dbgsym gawk-dbgsym sed-dbgsym \
+    curl-dbgsym openssh-client-dbgsym \
+    libssl3-dbgsym libsqlite3-0-dbgsym \
+    lua5.4-dbgsym \
+    || true \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/fetch_debian_pkgs.sh /extract.sh
+RUN chmod +x /extract.sh
+
+CMD ["/extract.sh"]

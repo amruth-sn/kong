@@ -224,3 +224,11 @@ internal-testing/
 .DS_Store
 
 docs/
+
+corpus/
+
+tools/xda/data/
+
+# Added by cargo
+
+/target
