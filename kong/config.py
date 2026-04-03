@@ -12,6 +12,7 @@ from kong.ghidra.environment import find_ghidra_install
 class LLMProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    CODEX = "codex"
     CUSTOM = "custom"
 
     @property
@@ -19,6 +20,7 @@ class LLMProvider(Enum):
         return {
             LLMProvider.ANTHROPIC: "Anthropic",
             LLMProvider.OPENAI: "OpenAI",
+            LLMProvider.CODEX: "Codex",
             LLMProvider.CUSTOM: "Custom",
         }[self]
 

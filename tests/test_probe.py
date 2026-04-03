@@ -124,6 +124,42 @@ class TestProbeOpenAI:
         config = LLMConfig(provider=LLMProvider.OPENAI, api_key="bad-key")
         assert probe_endpoint(config) is False
 
+    @patch("kong.llm.probe.openai.OpenAI")
+    def test_openai_probe_falls_back_to_inference_when_model_list_scope_missing(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.models.list.side_effect = openai.PermissionDeniedError(
+            message="Missing scopes: api.model.read",
+            response=MagicMock(status_code=403),
+            body=None,
+        )
+        mock_client.chat.completions.create.return_value = MagicMock()
+
+        config = LLMConfig(provider=LLMProvider.OPENAI, api_key="oauth-token")
+
+        assert probe_endpoint(config) is True
+        mock_client.chat.completions.create.assert_called_once()
+
+
+class TestProbeCodex:
+    @patch("kong.llm.probe.CodexClient")
+    def test_codex_probe_success(self, mock_codex_cls):
+        mock_codex_cls.return_value.probe.return_value = True
+        config = LLMConfig(provider=LLMProvider.CODEX, model="gpt-5-codex")
+        assert probe_endpoint(config) is True
+        mock_codex_cls.assert_called_once_with(
+            model="gpt-5-codex",
+            max_output_tokens=None,
+        )
+
+    @patch("kong.llm.probe.CodexClient")
+    def test_codex_probe_failure(self, mock_codex_cls):
+        from kong.llm.codex_client import CodexClientError
+
+        mock_codex_cls.return_value.probe.side_effect = CodexClientError("bad auth")
+        config = LLMConfig(provider=LLMProvider.CODEX, model="gpt-5-codex")
+        assert probe_endpoint(config) is False
+
 
 class TestProbeAnthropic:
     @patch("kong.llm.probe.anthropic.Anthropic")

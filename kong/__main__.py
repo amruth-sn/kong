@@ -27,8 +27,10 @@ from kong.config import GhidraConfig, KongConfig, LLMConfig, LLMProvider, Output
 from kong.db import get_custom_config, get_default_provider, get_enabled_providers, is_setup_complete, save_setup
 from kong.evals.harness import score as eval_score
 from kong.ghidra.client import GhidraClient, GhidraClientError
+from kong.llm.codex_auth import resolve_codex_credential
+from kong.llm.codex_client import CodexClient
+from kong.llm.openai_auth import resolve_openai_credential
 from kong.llm.usage import TokenUsage
-from kong.banner import _ENV_VARS, _KEY_EXAMPLES, _KEY_URLS
 from kong.llm.openai_client import OpenAIClient
 from kong.llm.client import AnthropicClient
 from kong.tui.app import KongApp
@@ -43,15 +45,18 @@ console = Console()
 _DEFAULT_MODELS: dict[LLMProvider, str] = {
     LLMProvider.ANTHROPIC: "claude-opus-4-6",
     LLMProvider.OPENAI: "gpt-4o",
+    LLMProvider.CODEX: "gpt-5-codex",
 }
 
 _PROVIDER_LABELS: dict[LLMProvider, str] = {
     LLMProvider.ANTHROPIC: "Anthropic (Claude)",
     LLMProvider.OPENAI: "OpenAI (GPT-4o)",
+    LLMProvider.CODEX: "Codex (ChatGPT OAuth)",
     LLMProvider.CUSTOM: "Custom (OpenAI-compatible)",
 }
 
 _NOT_NEEDED_STR = "not-needed"
+
 
 def create_llm_client(config: LLMConfig) -> LLMClient:
     """Instantiate the appropriate LLM client based on provider config."""
@@ -68,6 +73,11 @@ def create_llm_client(config: LLMConfig) -> LLMClient:
             model=model,
             base_url=config.base_url,
             api_key=api_key,
+        )
+    if config.provider is LLMProvider.CODEX:
+        return CodexClient(
+            model=model,
+            max_output_tokens=config.max_output_tokens,
         )
     if config.provider is LLMProvider.OPENAI:
         return OpenAIClient(model=model, api_key=config.api_key)
@@ -102,11 +112,16 @@ def resolve_provider(cli_override: str | None = None, base_url: str | None = Non
             return provider
         if check_api_key(provider):
             return provider
-        env_var = _ENV_VARS.get(provider, "unknown")
-        console.print(
-            f"[yellow]Warning:[/yellow] --provider {provider.value} specified "
-            f"but {env_var} is not set."
-        )
+        if provider is LLMProvider.CODEX:
+            console.print(
+                "[yellow]Warning:[/yellow] --provider codex specified but no local Codex OAuth login was found."
+            )
+        else:
+            env_var = _ENV_VARS.get(provider, "unknown")
+            console.print(
+                f"[yellow]Warning:[/yellow] --provider {provider.value} specified "
+                f"but {env_var} is not set."
+            )
         raise SystemExit(1)
 
     default = get_default_provider()
@@ -122,6 +137,10 @@ def resolve_provider(cli_override: str | None = None, base_url: str | None = Non
             return provider
 
     console.print("[red]No API keys found for any configured provider.[/red]")
+    if LLMProvider.OPENAI in get_enabled_providers():
+        console.print("OpenAI can also use your local Codex OAuth login.")
+    if LLMProvider.CODEX in get_enabled_providers():
+        console.print("Codex requires a local ChatGPT login. Run [bold]codex[/bold] first.")
     console.print("Run [bold cyan]kong setup[/bold cyan] to configure providers.")
     raise SystemExit(1)
 
@@ -151,7 +170,7 @@ def cli(ctx: click.Context, verbose: bool) -> None:
 
 def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     stats = supervisor.stats
-    is_custom = supervisor.config.llm.provider is LLMProvider.CUSTOM
+    is_non_billable = supervisor.config.llm.provider in (LLMProvider.CUSTOM, LLMProvider.CODEX)
     console.print()
     console.print(
         f"[bold]Results:[/bold] {stats.named}/{stats.total_functions} functions named "
@@ -170,7 +189,7 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
             f"{usage.total_tokens:,} total"
         )
         for model_name, mu in usage.by_model.items():
-            if is_custom:
+            if is_non_billable:
                 console.print(
                     f"  {model_name}: {mu.calls} calls, "
                     f"{mu.input_tokens:,} in / {mu.output_tokens:,} out"
@@ -180,8 +199,9 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
                     f"  {model_name}: {mu.calls} calls, "
                     f"${mu.cost_usd(model_name):.4f}"
                 )
-    if is_custom:
-        console.print("[dim]Cost tracking disabled for custom provider[/dim]")
+    if is_non_billable:
+        provider_name = "custom provider" if supervisor.config.llm.provider is LLMProvider.CUSTOM else "Codex"
+        console.print(f"[dim]Cost tracking disabled for {provider_name}[/dim]")
     else:
         total_cost = getattr(llm_client, "total_cost_usd", 0.0)
         console.print(f"[bold]Cost:[/bold] ${total_cost:.4f}")
@@ -210,7 +230,7 @@ def _print_final_stats(supervisor: Supervisor, llm_client: LLMClient) -> None:
     "--provider", "-p",
     type=click.Choice([p.value for p in LLMProvider], case_sensitive=False),
     default=None,
-    help="LLM provider (anthropic, openai, or custom).",
+    help="LLM provider (anthropic, openai, codex, or custom).",
 )
 @click.option("--model", "-m", default=None, help="Override the LLM model name.")
 @click.option("--base-url", default=None, help="Custom OpenAI-compatible endpoint URL.")
@@ -287,10 +307,25 @@ def analyze(
         console.print("[red]Could not connect to LLM endpoint.[/red]")
         if llm_provider is LLMProvider.CUSTOM:
             console.print(f"Ensure your server is running at {config.llm.base_url}")
+        elif llm_provider is LLMProvider.CODEX:
+            if resolve_codex_credential() is None:
+                console.print("Run [bold]codex[/bold] to sign in with ChatGPT first.")
+            else:
+                console.print("Your local Codex login was found, but the ChatGPT Codex backend rejected the request.")
+        elif llm_provider is LLMProvider.OPENAI:
+            credential = resolve_openai_credential()
+            if credential and credential.source == "codex_oauth":
+                console.print(
+                    "Codex OAuth was detected, but OpenAI API billing and scopes are managed separately."
+                )
+                console.print(
+                    "If this persists, enable API billing for your OpenAI project or set OPENAI_API_KEY."
+                )
         raise SystemExit(1)
 
-    if llm_provider is LLMProvider.CUSTOM:
-        console.print("[dim]Cost tracking disabled for custom provider (token counts still recorded)[/dim]")
+    if llm_provider in (LLMProvider.CUSTOM, LLMProvider.CODEX):
+        label = "custom provider" if llm_provider is LLMProvider.CUSTOM else "Codex"
+        console.print(f"[dim]Cost tracking disabled for {label} (token counts still recorded)[/dim]")
 
     binary_path = Path(binary).resolve()
 
@@ -432,11 +467,13 @@ def setup() -> None:
     console.print()
     console.print(f"  [bold]1[/bold]) Anthropic (Claude){_current_marker(LLMProvider.ANTHROPIC)}")
     console.print(f"  [bold]2[/bold]) OpenAI (GPT-4o){_current_marker(LLMProvider.OPENAI)}")
-    console.print(f"  [bold]3[/bold]) Custom endpoint (OpenAI-compatible){_current_marker(LLMProvider.CUSTOM)}")
-    console.print("  [bold]4[/bold]) Anthropic + OpenAI")
+    console.print(f"  [bold]3[/bold]) Codex (ChatGPT OAuth){_current_marker(LLMProvider.CODEX)}")
+    console.print(f"  [bold]4[/bold]) Custom endpoint (OpenAI-compatible){_current_marker(LLMProvider.CUSTOM)}")
+    console.print("  [bold]5[/bold]) Anthropic + OpenAI")
+    console.print("  [bold]6[/bold]) Anthropic + Codex")
     console.print()
 
-    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4"], console=console)
+    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4", "5", "6"], console=console)
     choice_int = int(choice)
 
     custom_config: dict[str, str] | None = None
@@ -445,9 +482,13 @@ def setup() -> None:
     elif choice_int == 2:
         enabled = [LLMProvider.OPENAI]
     elif choice_int == 3:
+        enabled = [LLMProvider.CODEX]
+    elif choice_int == 4:
         enabled = [LLMProvider.CUSTOM]
-    else:
+    elif choice_int == 5:
         enabled = [LLMProvider.ANTHROPIC, LLMProvider.OPENAI]
+    else:
+        enabled = [LLMProvider.ANTHROPIC, LLMProvider.CODEX]
 
     if LLMProvider.CUSTOM in enabled:
         saved_url = saved_custom.get("custom_base_url", "")
@@ -515,16 +556,46 @@ def setup() -> None:
         if p is LLMProvider.CUSTOM:
             any_key_found = True
             continue
+        if p is LLMProvider.CODEX:
+            credential = resolve_codex_credential()
+            if credential is not None:
+                console.print(
+                    f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] (via {credential.source_label})"
+                )
+                any_key_found = True
+            else:
+                console.print(f"  {_PROVIDER_LABELS[p]:25s} [yellow]Not set[/yellow]")
+                console.print("    Sign in locally with [bold]codex[/bold]")
+            console.print()
+            continue
         env_var = _ENV_VARS[p]
         if check_api_key(p):
-            key = os.environ.get(env_var, "")
-            masked = key[:7] + "..." + key[-4:] if len(key) > 11 else "***"
-            console.print(f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] ({masked})")
+            if p is LLMProvider.OPENAI:
+                credential = resolve_openai_credential()
+                if credential is not None:
+                    if credential.masked_value:
+                        console.print(
+                            f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] "
+                            f"({credential.masked_value} via {credential.source_label})"
+                        )
+                    else:
+                        console.print(
+                            f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] "
+                            f"(via {credential.source_label})"
+                        )
+                else:
+                    console.print(f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green]")
+            else:
+                key = os.environ.get(env_var, "")
+                masked = key[:7] + "..." + key[-4:] if len(key) > 11 else "***"
+                console.print(f"  {_PROVIDER_LABELS[p]:25s} [green]Found[/green] ({masked})")
             any_key_found = True
         else:
             console.print(f"  {_PROVIDER_LABELS[p]:25s} [yellow]Not set[/yellow]")
             console.print(f"    Get your key at: [bold]{_KEY_URLS[p]}[/bold]")
             console.print(f"    [bold]export {env_var}={_KEY_EXAMPLES[p]}[/bold]")
+            if p is LLMProvider.OPENAI:
+                console.print("    Or sign in locally with [bold]codex[/bold]")
         console.print()
 
     non_custom = [p for p in enabled if p is not LLMProvider.CUSTOM]

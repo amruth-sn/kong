@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -35,13 +36,32 @@ class TestSetupWizard:
         assert get_default_provider() is LLMProvider.OPENAI
         assert get_enabled_providers() == [LLMProvider.OPENAI]
 
+    def test_single_provider_openai_with_codex_oauth(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        codex_home = tmp_path / "codex-home"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text(json.dumps({
+            "OPENAI_API_KEY": None,
+            "tokens": {"access_token": "oauth-token"},
+        }))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["setup"], input="2\n")
+
+        assert result.exit_code == 0
+        assert "Codex OAuth" in result.output
+        assert get_default_provider() is LLMProvider.OPENAI
+        assert get_enabled_providers() == [LLMProvider.OPENAI]
+
     def test_both_providers_default_anthropic(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test1234")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test1234")
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["setup"], input="4\n1\n")
+        result = runner.invoke(cli, ["setup"], input="5\n1\n")
 
         assert result.exit_code == 0
         assert get_enabled_providers() == [LLMProvider.ANTHROPIC, LLMProvider.OPENAI]
@@ -53,10 +73,31 @@ class TestSetupWizard:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test1234")
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["setup"], input="4\n2\n")
+        result = runner.invoke(cli, ["setup"], input="5\n2\n")
 
         assert result.exit_code == 0
         assert get_default_provider() is LLMProvider.OPENAI
+
+    def test_single_provider_codex(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
+        codex_home = tmp_path / "codex-home"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text(json.dumps({
+            "tokens": {
+                "access_token": "oauth-token",
+                "refresh_token": "refresh-token",
+                "account_id": "acct_123",
+            },
+        }))
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["setup"], input="3\n")
+
+        assert result.exit_code == 0
+        assert "Codex" in result.output
+        assert get_default_provider() is LLMProvider.CODEX
+        assert get_enabled_providers() == [LLMProvider.CODEX]
 
     def test_shows_missing_key_instructions(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KONG_CONFIG_DIR", str(tmp_path))
