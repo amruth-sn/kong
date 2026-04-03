@@ -221,6 +221,12 @@ kong_output_{binary_name}/
 └── events.log            # Pipeline execution trace
 ```
 
+## Benchmarks
+
+Kong autonomously reconstructed the full [XZ backdoor](https://en.wikipedia.org/wiki/XZ_Utils_backdoor) (CVE-2024-3094) kill chain from a stripped `liblzma.so.5.4.1` — identifying all five core implant functions at 90-95% confidence in 15 minutes for $6.63.
+
+See **[BENCHMARKS.md](BENCHMARKS.md)** for the full case study and reproduction instructions.
+
 ## Project Layout
 
 ```

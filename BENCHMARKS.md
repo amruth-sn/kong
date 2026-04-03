@@ -44,3 +44,28 @@ Five functions were flagged for potential control-flow flattening. All were corr
 The XZ backdoor was discovered by a human noticing a timing anomaly. Finding the implant through static analysis of the stripped binary without symbols, without source, without knowing what to look for, is the kind of task that traditionally takes an experienced reverse engineer days of manual work.
 
 Kong reconstructed the full kill chain autonomously in 15 minutes. This suggests a path toward automated triage of suspected supply chain compromises: point Kong at a suspicious binary and get a structured assessment of what it does — including code that shouldn't be there.
+
+### Reproducing
+
+The binary analyzed is the backdoored `liblzma.so.5.4.1` from XZ Utils 5.6.1:
+
+```
+SHA-256: 9acd9fe4c12438db133a512eda0aaf6534daa18a8db6b002b214f48b73fb16ee
+Format:  ELF 64-bit LSB shared object, x86-64, stripped
+Size:    203,816 bytes
+```
+
+The binary can be sourced from Debian/Ubuntu snapshot archives for the affected package versions, the Fedora 40 beta package cache, or by building from the [xz-5.6.1 release tarball](https://tukaani.org/xz/). Verify the SHA-256 hash before running.
+
+```bash
+# Verify hash
+shasum -a 256 liblzma.so.5.4.1
+# 9acd9fe4c12438db133a512eda0aaf6534daa18a8db6b002b214f48b73fb16ee
+
+# Run analysis
+kong analyze ./liblzma.so.5.4.1 --headless --output ./kong_output_liblzma
+```
+
+Output: `analysis.json` (structured results) and `decompiled.c` (25,972-line annotated decompilation).
+
+**Note**: Results depend on the LLM model used. The results above were produced with `claude-opus-4-6` via the Anthropic provider.
