@@ -50,6 +50,9 @@ class EventType(Enum):
     RUN_COMPLETE = "run_complete"
     RUN_ERROR = "run_error"
 
+    ANALYSIS_DECOMPILE_PROGRESS = "analysis_decompile_progress"
+    ANALYSIS_DECOMPILE_COMPLETE = "analysis_decompile_complete"
+
 
 @dataclass
 class Event:

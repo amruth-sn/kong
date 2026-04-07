@@ -223,11 +223,13 @@ class Supervisor:
         ))
 
         all_items = self.queue.all_items()
+        total_items = len(all_items)
         chunk_items: list[tuple[WorkItem, str]] = []
         sequential_items: list[WorkItem] = []
         completed_count = 0
+        progress_reported = 0
 
-        for item in all_items:
+        for i, item in enumerate(all_items):
             func = item.function
 
             if func.classification and func.classification.value == "trivial":
@@ -262,6 +264,30 @@ class Supervisor:
                 continue
 
             chunk_items.append((item, normalize(decompilation)))
+
+            progress_threshold = 10
+            if i - progress_reported >= progress_threshold or i == total_items - 1:
+                progress_reported = i
+                self._emit(Event(
+                    type=EventType.ANALYSIS_DECOMPILE_PROGRESS,
+                    phase=Phase.ANALYSIS,
+                    message=f"Decompiling functions... {i+1}/{total_items}",
+                    data={
+                        "current": i + 1,
+                        "total": total_items,
+                        "percent": round((i + 1) / total_items * 100, 1),
+                    },
+                ))
+
+        self._emit(Event(
+            type=EventType.ANALYSIS_DECOMPILE_COMPLETE,
+            phase=Phase.ANALYSIS,
+            message=f"Decompilation complete. {len(chunk_items)} for batch, {len(sequential_items)} for sequential.",
+            data={
+                "batch_count": len(chunk_items),
+                "sequential_count": len(sequential_items),
+            },
+        ))
 
         if chunk_items:
             self._analyze_chunks(chunk_items, completed_count)
